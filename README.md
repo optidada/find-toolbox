@@ -213,6 +213,9 @@ Use short fields (titles, names). Phrase prefix on long text fields is costly an
   Elasticsearch's AUTO (1 edit for 3-5 characters, 2 above); the first character must match (`FuzzyPrefixLength`,
   default 1; upstream used 3, which never corrected a typo in the first three letters).
 - `WildcardMatch()` finds partial words (`episerv` → `episerver`), right side only.
+- When the search has a language (`Search<T>(Language.Swedish)`, `UnifiedSearch(Language.English)`), both search the
+  language field (`.sv`, `.en`) as well as the language neutral one, so they get the language analyzer's stemming and
+  index-time decompounding (e.g. Swedish compounds), like `For()`/`InField()` do.
 - Both use the user's words (not synonyms), only words of 3-16 characters and at most the first 3 of them, inherit
   `MinimumShouldMatch` and get a low boost (0.4 and 0.2) so exact matches rank first.
 - `WildcardMatch(boost, doubleSided: true, ...)` adds a leading wildcard (`*term*`). **Very expensive** (it scans

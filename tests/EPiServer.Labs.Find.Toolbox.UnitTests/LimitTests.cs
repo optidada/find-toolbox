@@ -1,3 +1,4 @@
+using EPiServer.Find;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
@@ -127,6 +128,29 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
 
                 Assert.Equal(3, (int)fuzzy["fuzzy_prefix_length"]);
             }
+        }
+
+        [Fact]
+        public void Fuzzy_and_wildcard_use_the_language_field_when_the_search_has_a_language()
+        {
+            var search = TestSearch.Client.Search<Doc>(EPiServer.Find.Language.Swedish).For("kaffekopp").FuzzyMatch(x => x.Title).WildcardMatch(x => x.Title);
+            var json = QueryJson(search);
+
+            foreach (var q in QueryStrings(json).Where(q => ((string)q["query"]).Contains("~") || ((string)q["query"]).Contains("*")))
+            {
+                var fields = q["fields"].Select(f => (string)f).ToList();
+                Assert.Contains(fields, f => f.EndsWith(".sv"));        // stemming / decompounding
+                Assert.Contains(fields, f => f.EndsWith(".standard"));  // content in other languages
+            }
+        }
+
+        [Fact]
+        public void Fuzzy_and_wildcard_without_language_use_the_language_neutral_field()
+        {
+            var json = QueryJson(For("episerver").FuzzyMatch(x => x.Title));
+            var fuzzy = QueryStrings(json).Single(q => ((string)q["query"]).Contains("~"));
+
+            Assert.All(fuzzy["fields"].Select(f => (string)f), f => Assert.DoesNotContain(".sv", f));
         }
 
         [Fact]

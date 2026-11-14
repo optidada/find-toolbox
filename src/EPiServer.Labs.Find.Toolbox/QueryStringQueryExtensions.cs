@@ -229,14 +229,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                List<string> fieldNames = new List<string>();
-                foreach (var fieldSelector in fieldSelectors)
-                {
-                    string fieldName = search.Client.Conventions
-                                        .FieldNameConvention
-                                        .GetFieldNameForAnalyzed(fieldSelector);
-                    fieldNames.Add(fieldName);
-                }
+                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors);
 
                 var fuzzyQueryString = string.Join(" ", candidateTerms);
                 var fuzzyQueryStringQuery = new MinShouldMatchQueryStringQuery(fuzzyQueryString)
@@ -314,14 +307,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                List<string> fieldNames = new List<string>();
-                foreach (var fieldSelector in fieldSelectors)
-                {
-                    string fieldName = search.Client.Conventions
-                                        .FieldNameConvention
-                                        .GetFieldNameForAnalyzed(fieldSelector);
-                    fieldNames.Add(fieldName);
-                }
+                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors);
 
                 var wildcardQueryString = string.Join(" ", candidateTerms);
                 var wildcardQuery = new MinShouldMatchQueryStringQuery(wildcardQueryString)
@@ -336,6 +322,26 @@ namespace EPiServer.Labs.Find.Toolbox
                 context.RequestBody.Query = newBoolQuery;
                 log.Debug("Added wildcard {0} to search", wildcardQueryString);
             });
+        }
+
+        /// <summary>
+        /// The language neutral field (.standard) and, when the search has a language, the language field (.en, .sv, ...)
+        /// whose analyzer stems and (for compounding languages) decompounds at index time - the same pair InField() uses.
+        /// </summary>
+        private static List<string> SearchFieldNames<TSource>(IClient client, ISearchContext context, IEnumerable<Expression<Func<TSource, string>>> fieldSelectors)
+        {
+            var fieldNames = new List<string>();
+            foreach (var fieldSelector in fieldSelectors)
+            {
+                if (context.ContentLanguage != null && context.ContentLanguage != Language.None)
+                {
+                    fieldNames.Add(client.Conventions.FieldNameConvention.GetFieldNameForSearch(fieldSelector, context.ContentLanguage));
+                }
+
+                fieldNames.Add(client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector));
+            }
+
+            return fieldNames.Distinct().ToList();
         }
 
         private static bool IsSingleTerm(string rawQuery)

@@ -1,334 +1,275 @@
 using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
-using EPiServer.Find.Cms;
 using EPiServer.Find.Helpers;
-using EPiServer.Find.Helpers.Text;
-using EPiServer.Find.Tracing;
 using EPiServer.Logging;
-using EPiServer.ServiceLocation;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 
 namespace EPiServer.Labs.Find.Toolbox
 {
+    /// <summary>
+    /// The Find Toolbox extensions for searches created with <c>For()</c>. They all work on the main query
+    /// (<see cref="MainQuery"/>) and can be combined in any order after <c>For()</c>.
+    /// </summary>
     public static class QueryStringQueryExtensions
     {
-        private static Lazy<UsingSynonymService> _lazyUsingSynonymService = new Lazy<UsingSynonymService>(() => ServiceLocator.Current.GetInstance<UsingSynonymService>());
-        private static readonly ILogger log = LogManager.GetLogger(typeof(SearchRequestExtensions));
+        private static readonly ILogger log = LogManager.GetLogger(typeof(QueryStringQueryExtensions));
 
-
+        /// <summary>Expands the query with the synonyms from the Find UI (see README).</summary>
         public static IQueriedSearch<TSource, QueryStringQuery> UsingSynonymsImproved<TSource>(this IQueriedSearch<TSource> search, TimeSpan? cacheDuration = null)
-        {
-            return search.UsingSynonymsImproved(_lazyUsingSynonymService.Value, cacheDuration);
-        }
+            => search.UsingSynonymsImproved(ToolboxServices.SynonymService, cacheDuration);
 
+        /// <summary>Expands the query with synonyms using an explicitly given service (e.g. with your own <see cref="ISynonymProvider"/>).</summary>
         public static IQueriedSearch<TSource, QueryStringQuery> UsingSynonymsImproved<TSource>(this IQueriedSearch<TSource> search, UsingSynonymService usingSynonymService, TimeSpan? cacheDuration = null)
-        {
-            return usingSynonymService.UsingSynonyms(search, cacheDuration);
-        }
+            => usingSynonymService.UsingSynonyms(search, cacheDuration);
 
+        /// <summary>
+        /// How many of the query's terms must match (e.g. "2", "100%", "2&lt;-25%"). A synonym group counts as one term;
+        /// a query with one term (or one synonym group) sends no minimum_should_match - there is nothing to count.
+        /// </summary>
         public static IQueriedSearch<TSource, QueryStringQuery> MinimumShouldMatch<TSource>(this IQueriedSearch<TSource> search, string minMatch)
         {
             return new Search<TSource, QueryStringQuery>(search, context =>
             {
-                if (!QueryHelpers.GetFirstQueryStringQuery(context, out IQuery currentQuery, out BoolQuery currentBoolQuery))
+                var main = MainQuery.Find(search, context, "MinimumShouldMatch()");
+                if (main == null)
                 {
-                    Trace.Instance.Add(new TraceEvent(search, "MinimumShouldMatch() relies on a QueryStringQuery, i.e. with the use of the .For() -extensions.") { IsError = false });
                     return;
                 }
 
-                var options = FindToolboxOptions.Current;
-                var originalQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, options);
-                var query = new MinShouldMatchQueryStringQuery(originalQuery.Query);
-                QueryHelpers.CopySettings(originalQuery, query);
+                var options = ToolboxServices.Options;
+                main.RemoveBooleanOperators(options);
+
+                var query = QueryHelpers.CreateToolboxQuery(main.Query.Query?.ToString(), main.Query);
                 query.MinimumShouldMatch = minMatch;
                 query.DefaultOperator = BooleanOperator.Or;
                 // One term (or one synonym group): nothing to count, and the analyzer may turn the single word into
                 // several tokens (e.g. word + stem) that minimum_should_match would then all require.
-                query.IsSingleClause = query.IsSingleClause || IsSingleTerm(QueryHelpers.GetRawQueryString(originalQuery), options);
+                query.Toolbox.IsSingleClause = query.Toolbox.IsSingleClause || IsSingleTerm(main.RawQuery, options);
 
-                if (ReferenceEquals(context.RequestBody.Query, currentBoolQuery) && currentBoolQuery.Should.Count > 0)
-                {
-                    currentBoolQuery.Should[0] = query;
-                    return;
-                }
-
-                context.RequestBody.Query = query;
-                log.Debug("Added MinimumShouldMatch to search");
+                main.Replace(query);
+                log.Debug("MinimumShouldMatch({0})", minMatch);
             });
         }
 
+        /// <summary>
+        /// Boosts documents where the fields contain the query as a phrase (match_phrase), start with it
+        /// (match_phrase_prefix) or, for one word, contain / start with the word. Also for the synonym variations from
+        /// UsingSynonymsImproved(), with a lower boost.
+        /// </summary>
         public static IQueriedSearch<TSource, QueryStringQuery> UsingRelevanceImproved<TSource>(this IQueriedSearch<TSource> search, params Expression<Func<TSource, string>>[] fieldSelectors)
         {
             return new Search<TSource, QueryStringQuery>(search, context =>
             {
-                BoolQuery newBoolQuery = new BoolQuery();
-                BoolQuery currentBoolQuery;
-                IQuery currentQuery;
-
-                if (!QueryHelpers.GetFirstQueryStringQuery(context, out currentQuery, out currentBoolQuery))
-                {
-                    Trace.Instance.Add(new TraceEvent(search, "The use of UsingRelevanceImproved() relies on a QueryStringQuery, i.e. with the use of the .For() -extensions.") { IsError = false });
-                    return;
-                }
-
-                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
-                // Ignored (default): make sure the main query no longer contains them.
-                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
+                var main = MainQuery.Find(search, context, "UsingRelevanceImproved()");
+                var options = ToolboxServices.Options;
+                if (main == null || main.LeaveToFind(options))
                 {
                     return;
                 }
-                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
 
-                // Keep the current bool query with current queries if it exists
-                if (currentBoolQuery.Should.Count > 0)
-                {
-                    newBoolQuery = currentBoolQuery;
-                }
-                else // Or use the QueryStringQuery
-                {
-                    newBoolQuery.Should.Add(currentQuery);
-                }
+                // The user's words, or (after UsingSynonymsImproved) the user's words + synonym variations
+                var queriesForMatch = main.State.QueriesForMatch is string[] variations && variations.Length > 0
+                    ? variations
+                    : new[] { string.Join(" ", QueryHelpers.GetQueryPhrases(main.RawQuery, options.MaxQueryTerms)) };
 
-
-                IList<string> queriesForMatch = null;
-
-                // If .UsingSynonymsImproved() was used we use QueriesForMatch (original + synonym variations) instead of the raw query
-                if (currentQuery is MinShouldMatchQueryStringQuery msmQuery && msmQuery.QueriesForMatch != null && msmQuery.QueriesForMatch.Length > 0)
-                {
-                    queriesForMatch = msmQuery.QueriesForMatch;
-                }
-                else
-                {
-                    queriesForMatch = new[] { string.Join(" ", QueryHelpers.GetQueryPhrases(QueryHelpers.GetRawQueryString(currentQuery))) };
-                }
-
-
-                var options = FindToolboxOptions.Current;
+                var clauses = new List<IQuery>();
                 var originalTermCount = 1;
-                for (var variation = 0; variation < queriesForMatch.Count; variation++)
+                for (var variation = 0; variation < queriesForMatch.Length; variation++)
                 {
                     // match_phrase / match_phrase_prefix / prefix are not query_string queries: no escaping, no quotes.
                     // Punctuation only tokens (e.g. & in "search & navigation") are dropped: Find's shingled fields index them
                     // as tokens, which inflates phrase scores. Limit the number of terms: match_phrase_prefix expands the last term.
                     var terms = queriesForMatch[variation].Replace("\"", string.Empty)
-                                             .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                                             .Where(t => t.Any(char.IsLetterOrDigit))
-                                             .Take(Math.Max(1, options.MaxRelevanceTerms))
-                                             .ToArray();
+                        .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Where(t => t.Any(char.IsLetterOrDigit))
+                        .Take(Math.Max(1, options.MaxRelevanceTerms))
+                        .ToArray();
                     if (terms.Length == 0)
                     {
                         continue;
                     }
 
-                    // The first variation is the user's query; the rest are synonym variations. Synonym variations get
-                    // a lower boost, normalized by length: phrase scores grow with the number of (shingled) terms, so a
-                    // longer synonym would otherwise outrank the user's own words.
-                    double factor;
+                    // The first variation is the user's query; the rest are synonym variations. Synonym variations get a lower
+                    // boost, normalized by length: phrase scores grow with the number of (shingled) terms, so a longer synonym
+                    // would otherwise outrank the user's own words.
                     if (variation == 0)
                     {
                         originalTermCount = terms.Length;
-                        factor = 1;
                     }
-                    else
-                    {
-                        factor = options.SynonymVariationBoostFactor * Math.Min(1.0, (double)originalTermCount / terms.Length);
-                    }
+                    var factor = variation == 0 ? 1 : options.SynonymVariationBoostFactor * Math.Min(1.0, (double)originalTermCount / terms.Length);
 
-                    var query = string.Join(" ", terms);
-
-                    foreach (var fieldSelector in fieldSelectors)
-                    {
-                        var fieldNameLowercase = search.Client.Conventions.FieldNameConvention.GetFieldNameForLowercase(fieldSelector);
-                        var fieldNameAnalyzed = search.Client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector);
-
-                        if (terms.Length == 1)
-                        {
-                            // Field contains the term
-                            if (terms[0].Length > 1)
-                            {
-                                newBoolQuery.Should.Add(new PhraseQuery(fieldNameAnalyzed, query) { Boost = options.PhraseBoost * factor });
-                            }
-
-                            // Field starts with the term
-                            if (terms[0].Length >= options.MinPrefixLength)
-                            {
-                                newBoolQuery.Should.Add(new PrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = options.PrefixBoost * factor });
-                            }
-                        }
-                        else if (terms.Any(x => x.Length > 1))
-                        {
-                            // Field contains the phrase / field starts with the phrase
-                            newBoolQuery.Should.Add(new PhraseQuery(fieldNameAnalyzed, query) { Boost = options.PhraseBoost * factor });
-                            newBoolQuery.Should.Add(new PhrasePrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = options.PhrasePrefixBoost * factor });
-                        }
-                    }
+                    clauses.AddRange(RelevanceClauses(search.Client, fieldSelectors, terms, factor, options));
                 }
 
-                log.Debug("Added PrefixQuery, PhraseQuery and PhrasePrefixQuery to search");
-                context.RequestBody.Query = newBoolQuery;
+                main.AddOptional(clauses.ToArray());
+                log.Debug("UsingRelevanceImproved: {0} clauses", clauses.Count);
             });
         }
 
+        /// <summary>Finds words with typos (default boost <see cref="FindToolboxOptions.FuzzyBoost"/>).</summary>
         public static IQueriedSearch<TSource, QueryStringQuery> FuzzyMatch<TSource>(this IQueriedSearch<TSource> search, params Expression<Func<TSource, string>>[] fieldSelectors)
-        {
-            return search.FuzzyMatch(FindToolboxOptions.Current.FuzzyBoost, fieldSelectors);
-        }
+            => search.FuzzyMatch(ToolboxServices.Options.FuzzyBoost, fieldSelectors);
 
+        /// <summary>Finds words with typos.</summary>
         public static IQueriedSearch<TSource, QueryStringQuery> FuzzyMatch<TSource>(this IQueriedSearch<TSource> search, double boost, params Expression<Func<TSource, string>>[] fieldSelectors)
-        {
-            return new Search<TSource, QueryStringQuery>(search, context =>
-            {
-                BoolQuery newBoolQuery = new BoolQuery();
-                BoolQuery currentBoolQuery;
-                IQuery currentQuery;
+            => search.TermVariantMatch("FuzzyMatch()", fieldSelectors, boost,
+                term => term.Quote() + "~",
+                options => options.FuzzyUseLanguageField,
+                (query, options) => query.FuzzyPrefixLength = options.FuzzyPrefixLength);
 
-                if (!QueryHelpers.GetFirstQueryStringQuery(context, out currentQuery, out currentBoolQuery))
-                {
-                    Trace.Instance.Add(new TraceEvent(search, "The use of FuzzyMatch relies on QueryStringQuery, i.e. with the use of the .For() -extensions.") { IsError = false });
-                    return;
-                }
-
-                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
-                // Ignored (default): make sure the main query no longer contains them.
-                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
-                {
-                    return;
-                }
-                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
-
-                // Keep the current bool query with current queries if it exists
-                if (currentBoolQuery.Should.Count > 0)
-                {
-                    newBoolQuery = currentBoolQuery;
-                }
-                else // Or use the QueryStringQuery
-                {
-                    newBoolQuery.Should.Add(currentQuery);
-                }
-
-                var query = QueryHelpers.GetRawQueryString(currentQuery);
-                if (query.IsNullOrEmpty())
-                {
-                    return;
-                }
-
-                // Do not trigger on synonym expansions which are parenthesized and not on quoted searches.
-                if (QueryHelpers.IsStringParenthesized(query) || QueryHelpers.IsStringQuoted(query))
-                {
-                    return;
-                }
-
-                var terms = QueryHelpers.GetQueryPhrases(query);
-
-                // Only take terms > 2 chars and take max 3 of these
-                var options = FindToolboxOptions.Current;
-                string[] candidateTerms = FuzzyWildcardCandidates(terms, options)
-                                               .Select(x => string.Format("{0}{1}", x.Quote(), "~")).ToArray();
-
-                if (candidateTerms.Count() == 0)
-                {
-                    return;
-                }
-
-                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors, FindToolboxOptions.Current.FuzzyUseLanguageField);
-
-                var fuzzyQueryString = string.Join(" ", candidateTerms);
-                var fuzzyQueryStringQuery = new MinShouldMatchQueryStringQuery(fuzzyQueryString)
-                {
-                    Fields = fieldNames,
-                    DefaultOperator = (currentQuery as QueryStringQuery).DefaultOperator,
-                    MinimumShouldMatch = (currentQuery as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch,
-                    FuzzyPrefixLength = options.FuzzyPrefixLength,
-                    Boost = boost
-                };
-
-                newBoolQuery.Should.Add(fuzzyQueryStringQuery);
-                context.RequestBody.Query = newBoolQuery;
-                log.Debug("Added fuzzyMatch {0} to search", fuzzyQueryString);
-            });
-        }
-
+        /// <summary>Finds partial words, right side wildcard (default boost <see cref="FindToolboxOptions.WildcardBoost"/>).</summary>
         public static IQueriedSearch<TSource, QueryStringQuery> WildcardMatch<TSource>(this IQueriedSearch<TSource> search, params Expression<Func<TSource, string>>[] fieldSelectors)
+            => search.WildcardMatch(ToolboxServices.Options.WildcardBoost, doubleSided: false, fieldSelectors);
+
+        /// <summary>Finds partial words. <paramref name="doubleSided"/> adds a leading wildcard too: very expensive.</summary>
+        public static IQueriedSearch<TSource, QueryStringQuery> WildcardMatch<TSource>(this IQueriedSearch<TSource> search, double boost, bool doubleSided, params Expression<Func<TSource, string>>[] fieldSelectors)
+            => search.TermVariantMatch("WildcardMatch()", fieldSelectors, boost,
+                term => doubleSided ? "*" + term.Quote() + "*" : term.Quote() + "*",
+                options => options.WildcardUseLanguageField,
+                configure: null);
+
+        /// <summary>
+        /// Adds a field to the query (like Find's InField) in both the language neutral and the language field. Works in any
+        /// order with the other toolbox extensions.
+        /// </summary>
+        public static IQueriedSearch<TSource, QueryStringQuery> InFieldImproved<TSource, TExistingQuery>(
+                this IQueriedSearch<TSource, TExistingQuery> search,
+                Expression<Func<TSource, string>> fieldSelector,
+                double? relativeImportance = null)
+                where TExistingQuery : QueryStringQuery
         {
-            return search.WildcardMatch(FindToolboxOptions.Current.WildcardBoost, doubleSided: false, fieldSelectors);
+            fieldSelector.ValidateNotNullArgument("fieldSelector");
+
+            return new Search<TSource, QueryStringQuery>(search, context =>
+            {
+                var nonLanguageField = search.Client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector);
+                var languageField = search.Client.Conventions.FieldNameConvention.GetFieldNameForSearch(fieldSelector, context.ContentLanguage);
+
+                AddFieldToQueryStringQuery(context, nonLanguageField, relativeImportance);
+                AddFieldToQueryStringQuery(context, languageField, relativeImportance);
+            });
         }
 
-        public static IQueriedSearch<TSource, QueryStringQuery> WildcardMatch<TSource>(this IQueriedSearch<TSource> search, double boost, bool doubleSided, params Expression<Func<TSource, string>>[] fieldSelectors)
+        /// <summary>Adds a field (with optional boost) to the main query, also when other toolbox extensions wrapped it.</summary>
+        public static void AddFieldToQueryStringQuery(ISearchContext context, string fieldNameToAdd, double? relativeImportance)
+        {
+            var main = MainQuery.Find(null, context, "InFieldImproved()");
+            if (main == null)
+            {
+                return;
+            }
+
+            if (!(main.Query is MultiFieldQueryStringQuery query))
+            {
+                query = new MultiFieldQueryStringQuery(main.Query.Query);
+                QueryHelpers.CopySettings(main.Query, query);
+                if (main.Query.DefaultField.IsNotNull())
+                {
+                    query.Fields.Add(main.Query.DefaultField);
+                }
+                main.Replace(query);
+            }
+
+            if (relativeImportance != null)
+            {
+                // Invariant culture: "0,5" (e.g. on a Swedish server) is not valid query syntax
+                fieldNameToAdd = fieldNameToAdd + "^" + relativeImportance.Value.ToString(CultureInfo.InvariantCulture);
+            }
+
+            query.Fields.Add(fieldNameToAdd);
+        }
+
+        /// <summary>
+        /// FuzzyMatch and WildcardMatch: an optional query_string with a variant (term~ / term*) of the user's words, on the
+        /// given fields, with the main query's operator and minimum_should_match.
+        /// </summary>
+        private static IQueriedSearch<TSource, QueryStringQuery> TermVariantMatch<TSource>(this IQueriedSearch<TSource> search, string extension,
+            Expression<Func<TSource, string>>[] fieldSelectors, double boost, Func<string, string> variant,
+            Func<FindToolboxOptions, bool> useLanguageField, Action<MinShouldMatchQueryStringQuery, FindToolboxOptions>? configure)
         {
             return new Search<TSource, QueryStringQuery>(search, context =>
             {
-                BoolQuery newBoolQuery = new BoolQuery();
-                BoolQuery currentBoolQuery;
-                IQuery currentQuery;
-
-                if (!QueryHelpers.GetFirstQueryStringQuery(context, out currentQuery, out currentBoolQuery))
-                {
-                    // Synonyms are only supported for QueryStringQuery
-                    Trace.Instance.Add(new TraceEvent(search, "The use of synonyms are only supported för QueryStringQueries, i.e. with the use of the .For() -extensions. The query will be executed without the use of synonyms.") { IsError = false });
-                    return;
-                }
-
-                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
-                // Ignored (default): make sure the main query no longer contains them.
-                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
-                {
-                    return;
-                }
-                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
-
-                // Keep the current bool query with current queries if it exists
-                if (currentBoolQuery.Should.Count > 0)
-                {
-                    newBoolQuery = currentBoolQuery;
-                }
-                else // Or use the QueryStringQuery
-                {
-                    newBoolQuery.Should.Add(currentQuery);
-                }
-
-                var query = QueryHelpers.GetRawQueryString(currentQuery);
-                if (query.IsNullOrEmpty())
+                var main = MainQuery.Find(search, context, extension);
+                var options = ToolboxServices.Options;
+                if (main == null || main.LeaveToFind(options))
                 {
                     return;
                 }
 
-                // Do not trigger on synonym expansions which are parenthesized and not on quoted searches.
-                if (QueryHelpers.IsStringParenthesized(query) || QueryHelpers.IsStringQuoted(query))
+                // Not on quoted searches (exact phrase wanted)
+                var rawQuery = main.RawQuery;
+                if (string.IsNullOrEmpty(rawQuery) || QueryHelpers.IsStringQuoted(rawQuery) || QueryHelpers.IsStringParenthesized(rawQuery))
                 {
                     return;
                 }
 
-                var terms = QueryHelpers.GetQueryPhrases(query);
-
-                // Limit term size and term count
-                string[] candidateTerms = FuzzyWildcardCandidates(terms, FindToolboxOptions.Current)
-                                               .Select(x => doubleSided ? string.Format("*{0}*", x.Quote()) : string.Format("{0}*", x.Quote()))
-                                               .ToArray();
-
-                if (candidateTerms.Count() == 0)
+                var candidates = QueryHelpers.GetQueryPhrases(rawQuery, options.MaxQueryTerms)
+                    .Where(x => !QueryHelpers.IsStringQuoted(x)
+                                && x.Length >= options.MinFuzzyWildcardTermLength
+                                && x.Length <= options.MaxFuzzyWildcardTermLength)
+                    .Take(Math.Max(0, options.MaxFuzzyWildcardTerms))
+                    .Select(variant)
+                    .ToList();
+                // The Find service rejects fuzzy (~) query_string queries longer than MaxBoostedQueryLength (400)
+                while (options.MaxBoostedQueryLength > 0 && candidates.Count > 0
+                       && string.Join(" ", candidates).Length > options.MaxBoostedQueryLength && string.Join(" ", candidates).IndexOfAny(new[] { '^', '~' }) >= 0)
+                {
+                    candidates.RemoveAt(candidates.Count - 1);
+                }
+                if (candidates.Count == 0)
                 {
                     return;
                 }
 
-                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors, FindToolboxOptions.Current.WildcardUseLanguageField);
-
-                var wildcardQueryString = string.Join(" ", candidateTerms);
-                var wildcardQuery = new MinShouldMatchQueryStringQuery(wildcardQueryString)
+                var query = new MinShouldMatchQueryStringQuery(string.Join(" ", candidates))
                 {
-                    Fields = fieldNames,
-                    DefaultOperator = (currentQuery as QueryStringQuery).DefaultOperator,
-                    MinimumShouldMatch = (currentQuery as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch,
-                    Boost = boost
+                    Fields = SearchFieldNames(search.Client, context, fieldSelectors, useLanguageField(options)),
+                    DefaultOperator = main.Query.DefaultOperator,
+                    MinimumShouldMatch = main.MinimumShouldMatch,
+                    Boost = boost,
                 };
+                configure?.Invoke(query, options);
 
-                newBoolQuery.Should.Add(wildcardQuery);
-                context.RequestBody.Query = newBoolQuery;
-                log.Debug("Added wildcard {0} to search", wildcardQueryString);
+                main.AddOptional(query);
+                log.Debug("{0}: {1}", extension, query.Query);
             });
+        }
+
+        private static IEnumerable<IQuery> RelevanceClauses<TSource>(IClient client, IEnumerable<Expression<Func<TSource, string>>> fieldSelectors,
+            string[] terms, double factor, FindToolboxOptions options)
+        {
+            var query = string.Join(" ", terms);
+            foreach (var fieldSelector in fieldSelectors)
+            {
+                var lowercaseField = client.Conventions.FieldNameConvention.GetFieldNameForLowercase(fieldSelector);
+                var analyzedField = client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector);
+
+                if (terms.Length == 1)
+                {
+                    // Field contains the term
+                    if (terms[0].Length > 1)
+                    {
+                        yield return new PhraseQuery(analyzedField, query) { Boost = options.PhraseBoost * factor, Slop = options.PhraseSlop };
+                    }
+
+                    // Field starts with the term
+                    if (terms[0].Length >= options.MinPrefixLength)
+                    {
+                        yield return new PrefixQuery(lowercaseField, query.ToLowerInvariant()) { Boost = options.PrefixBoost * factor };
+                    }
+                }
+                else if (terms.Any(x => x.Length > 1))
+                {
+                    // Field contains the phrase / field starts with the phrase
+                    yield return new PhraseQuery(analyzedField, query) { Boost = options.PhraseBoost * factor, Slop = options.PhraseSlop };
+                    yield return new PhrasePrefixQuery(lowercaseField, query.ToLowerInvariant()) { Boost = options.PhrasePrefixBoost * factor };
+                }
+            }
         }
 
         /// <summary>
@@ -352,59 +293,8 @@ namespace EPiServer.Labs.Find.Toolbox
         }
 
         private static bool IsSingleTerm(string rawQuery, FindToolboxOptions options)
-            => !string.IsNullOrWhiteSpace(rawQuery) && !QueryHelpers.RespectsBooleanOperators(rawQuery, options) && QueryHelpers.GetQueryPhrases(rawQuery, options.MaxQueryTerms).Length == 1;
-
-        private static IEnumerable<string> FuzzyWildcardCandidates(IEnumerable<string> terms, FindToolboxOptions options)
-        {
-            return terms.Where(x => !QueryHelpers.IsStringQuoted(x)
-                                    && x.Length >= options.MinFuzzyWildcardTermLength
-                                    && x.Length <= options.MaxFuzzyWildcardTermLength)
-                        .Take(Math.Max(0, options.MaxFuzzyWildcardTerms));
-        }
-
-        public static IQueriedSearch<TSource, QueryStringQuery> InFieldImproved<TSource, TExistingQuery>(
-                this IQueriedSearch<TSource, TExistingQuery> search,
-                Expression<Func<TSource, string>> fieldSelector,
-                double? relativeImportance = null)
-                where TExistingQuery : QueryStringQuery
-        {
-            fieldSelector.ValidateNotNullArgument("fieldSelector");
-
-            return new Search<TSource, QueryStringQuery>(search, context =>
-            {
-                var nonLanguageField = search.Client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector);
-                var languageField = search.Client.Conventions.FieldNameConvention.GetFieldNameForSearch(fieldSelector, context.ContentLanguage);
-
-                AddFieldToQueryStringQuery(context, nonLanguageField, relativeImportance);
-                AddFieldToQueryStringQuery(context, languageField, relativeImportance);
-            });
-
-        }
-
-        public static void AddFieldToQueryStringQuery(ISearchContext context, string fieldNameToAdd, double? relativeImportance)
-        {
-            var query = context.RequestBody.Query as MultiFieldQueryStringQuery;
-            if (query.IsNull())
-            {
-                var originalQuery = (QueryStringQuery)context.RequestBody.Query;
-                query = new MultiFieldQueryStringQuery(originalQuery.Query);
-                QueryHelpers.CopySettings(originalQuery, query);
-                if (originalQuery.DefaultField.IsNotNull())
-                {
-                    query.Fields.Add(originalQuery.DefaultField);
-                }
-            }
-
-            if (relativeImportance != null)
-            {
-                var relativeImportanceString = relativeImportance.Value.ToString();
-                fieldNameToAdd = string.Format("{0}^{1}", fieldNameToAdd, relativeImportanceString);
-            }
-
-            query.Fields.Add(fieldNameToAdd);
-            context.RequestBody.Query = query;
-        }
-
+            => !string.IsNullOrWhiteSpace(rawQuery)
+               && !QueryHelpers.RespectsBooleanOperators(rawQuery, options)
+               && QueryHelpers.GetQueryPhrases(rawQuery, options.MaxQueryTerms).Length == 1;
     }
-
 }

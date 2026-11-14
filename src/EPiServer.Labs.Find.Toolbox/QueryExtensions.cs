@@ -6,6 +6,10 @@ using Newtonsoft.Json;
 
 namespace EPiServer.Labs.Find.Toolbox
 {
+    /// <summary>
+    /// The query_string query the toolbox sends: Find's multi field query string query plus minimum_should_match,
+    /// lenient, and the toolbox's own state (not sent).
+    /// </summary>
     public class MinShouldMatchQueryStringQuery : MultiFieldQueryStringQuery
     {
         public MinShouldMatchQueryStringQuery(FieldFilterValue query)
@@ -15,29 +19,18 @@ namespace EPiServer.Labs.Find.Toolbox
 
         /// <summary>The requested minimum_should_match (inherited by FuzzyMatch/WildcardMatch).</summary>
         [JsonIgnore]
-        public string MinimumShouldMatch { get; set; }
+        public string? MinimumShouldMatch { get; set; }
 
-        /// <summary>
-        /// True when the query has ONE top level clause: one word, or one synonym group such as
-        /// <c>(find OR (search AND navigation))</c>. minimum_should_match is then not sent: there is nothing to count, and
-        /// it would count the wrong things - the alternatives of an unwrapped synonym group (100% => find AND search AND
-        /// navigation), or the tokens the analyzer makes of a single word (automobile => automobile + automobil).
-        /// </summary>
+        /// <summary>What the toolbox extensions pass on to each other about this query (not sent to Find).</summary>
         [JsonIgnore]
-        public bool IsSingleClause { get; set; }
+        public ToolboxQueryState Toolbox { get; set; } = new ToolboxQueryState();
 
-        /// <summary>The user's AND / OR / NOT have been removed from the query text (BooleanOperatorHandling.Ignore).</summary>
-        [JsonIgnore]
-        public bool BooleanOperatorsRemoved { get; set; }
-
+        /// <summary>minimum_should_match as sent: not for a single clause (see <see cref="ToolboxQueryState.IsSingleClause"/>).</summary>
         [JsonProperty("minimum_should_match", NullValueHandling = NullValueHandling.Ignore)]
-        public string MinimumShouldMatchForRequest => IsSingleClause ? null : MinimumShouldMatch;
+        public string? MinimumShouldMatchForRequest => Toolbox.IsSingleClause ? null : MinimumShouldMatch;
 
         [JsonProperty("lenient", NullValueHandling = NullValueHandling.Ignore)]
         public bool Lenient { get; set; } = true;
-
-        [JsonIgnore]
-        public string[] QueriesForMatch { get; set; }
 
     }
 
@@ -48,18 +41,18 @@ namespace EPiServer.Labs.Find.Toolbox
         }
 
         [JsonProperty("minimum_should_match", NullValueHandling = NullValueHandling.Ignore)]
-        public string MinimumShouldMatch { get; set; }
+        public string? MinimumShouldMatch { get; set; }
 
     }
 
+    /// <summary>match_phrase: the field contains the words in this order (with Slop words in between).</summary>
     [JsonConverter(typeof(PhraseQueryConverter))]
     public class PhraseQuery : BoostableQuery
     {
         public PhraseQuery(string field, string value)
         {
-            //TODO: Validate args not null
-            Field = field;
-            Value = value;
+            Field = field ?? throw new System.ArgumentNullException(nameof(field));
+            Value = value ?? throw new System.ArgumentNullException(nameof(value));
         }
 
         [JsonIgnore]
@@ -68,12 +61,13 @@ namespace EPiServer.Labs.Find.Toolbox
         [JsonProperty("query")]
         public string Value { get; set; }
 
+        /// <summary>How many words may be between / around the phrase words (FindToolboxOptions.PhraseSlop, default 2).</summary>
         [JsonProperty("slop")]
-        public int Slop { get { return 2; } }
+        public int Slop { get; set; } = 2;
 
     }
 
-    public class PhraseQueryConverter : CustomWriteConverterBase<PrefixQuery>
+    public class PhraseQueryConverter : CustomWriteConverterBase<PhraseQuery>
     {
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
@@ -96,14 +90,14 @@ namespace EPiServer.Labs.Find.Toolbox
         }
     }
 
+    /// <summary>match_phrase_prefix: the field contains the phrase, the last word as a prefix.</summary>
     [JsonConverter(typeof(PhrasePrefixQueryConverter))]
     public class PhrasePrefixQuery : BoostableQuery
     {
         public PhrasePrefixQuery(string field, string value)
         {
-            //TODO: Validate args not null
-            Field = field;
-            Value = value;
+            Field = field ?? throw new System.ArgumentNullException(nameof(field));
+            Value = value ?? throw new System.ArgumentNullException(nameof(value));
         }
 
         [JsonIgnore]
@@ -113,7 +107,7 @@ namespace EPiServer.Labs.Find.Toolbox
         public string Value { get; set; }
     }
 
-    public class PhrasePrefixQueryConverter : CustomWriteConverterBase<PrefixQuery>
+    public class PhrasePrefixQueryConverter : CustomWriteConverterBase<PhrasePrefixQuery>
     {
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {

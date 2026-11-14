@@ -1,0 +1,22 @@
+# Normalize text files to LF in the repository; checkout uses the platform's line endings.
+* text=auto
+
+*.cs      text diff=csharp
+*.cshtml  text
+*.csproj  text
+*.sln     text eol=crlf
+*.config  text
+*.json    text
+*.md      text
+*.yml     text
+*.ps1     text eol=crlf
+*.sh      text eol=lf
+
+*.png     binary
+*.jpg     binary
+*.gif     binary
+*.ico     binary
+*.nupkg   binary
+*.snupkg  binary
+*.zip     binary
+*.episerverdata binary

@@ -226,16 +226,16 @@ namespace EPiServer.Labs.Find.Toolbox
             return synonymsFlattened;
         }
 
-        private static void AddSynonym(string phrase, string synonym, ref Dictionary<string, HashSet<string>> synonyms)
+        private static void AddSynonym(string? rawPhrase, string? rawSynonym, ref Dictionary<string, HashSet<string>> synonyms)
         {
-            phrase = phrase?.Trim().ToLowerInvariant();
-            synonym = synonym?.Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(phrase) || string.IsNullOrEmpty(synonym) || phrase == synonym)
+            var phrase = rawPhrase?.Trim().ToLowerInvariant();
+            var synonym = rawSynonym?.Trim().ToLowerInvariant();
+            if (phrase == null || synonym == null || phrase.Length == 0 || synonym.Length == 0 || phrase == synonym)
             {
                 return;
             }
 
-            if (!synonyms.TryGetValue(phrase, out HashSet<string> existingSynonyms))
+            if (!synonyms.TryGetValue(phrase, out var existingSynonyms))
             {
                 existingSynonyms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 synonyms.Add(phrase, existingSynonyms);

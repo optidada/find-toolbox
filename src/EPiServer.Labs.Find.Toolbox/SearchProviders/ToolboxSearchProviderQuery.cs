@@ -1,7 +1,17 @@
 using EPiServer.Core;
+using EPiServer.DataAbstraction;
 using EPiServer.Find;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Cms;
+using EPiServer.Find.Cms.SearchProviders;
+using EPiServer.Find.Framework;
+using EPiServer.Find.UnifiedSearch;
+using EPiServer.Framework;
+using EPiServer.Globalization;
+using EPiServer.ServiceLocation;
+using EPiServer.Shell;
+using EPiServer.Shell.Search;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,15 +19,106 @@ using System.Linq;
 namespace EPiServer.Labs.Find.Toolbox.SearchProviders
 {
     /// <summary>
-    /// The toolbox query used by all CMS UI search providers (pages, media, blocks; CMS 11 and CMS 12).
+    /// Everything the CMS UI search providers (pages, media, blocks; CMS 11 and CMS 12) have in common. The provider classes
+    /// only differ in their base class, constructor and content type.
     /// </summary>
     internal static class ToolboxSearchProviderQuery
     {
+        private const string AllowedTypes = "allowedTypes";
+        private const string RestrictedTypes = "restrictedTypes";
+
+        /// <summary>
+        /// Runs a provider search the way the CMS edit UI expects it: toolbox query, the provider's content type, the UI's
+        /// allowed/restricted types, access, culture and roots filters; returns the loaded content.
+        /// </summary>
+        /// <param name="isPageSearch">Pages also match absolute URLs and publish dates.</param>
+        /// <param name="addContentSpecificFields">The base provider's AddContentSpecificFields (media, blocks).</param>
+        public static List<TContent> Search<TContent>(
+            Query query,
+            UIDescriptorRegistry uiDescriptorRegistry,
+            Func<IEnumerable<ContentType>> listContentTypes,
+            IContentLoader contentLoader,
+            bool isPageSearch = false,
+            Func<IQueriedSearch<IContentData, QueryStringQuery>, IQueriedSearch<IContentData, QueryStringQuery>>? addContentSpecificFields = null)
+            where TContent : IContentData
+        {
+            Validator.ThrowIfNull("SearchProviderFactory.Instance.AccessFilter", FilterFactory.Instance.ContentAccessFilter);
+            Validator.ThrowIfNull("SearchProviderFactory.Instance.CultureFilter", FilterFactory.Instance.CultureFilter);
+            Validator.ThrowIfNull("SearchProviderFactory.Instance.RootsFilter", FilterFactory.Instance.RootsFilter);
+
+            query.MaxResults = MaxResults(query.MaxResults);
+
+            IEnumerable<Type> ContentTypes(string parameter) => ContentTypesFromQuery(query, parameter, uiDescriptorRegistry, listContentTypes);
+
+            var search = FieldQuery(query.SearchQuery, query.MaxResults, isPageSearch, addContentSpecificFields)
+                .Filter(x => x.MatchTypeHierarchy(typeof(TContent)));
+
+            var filterContext = FilterContext.Create<IContentData, ContentType>(query);
+            search = FilterFactory.Instance.AllowedTypesFilter(search, filterContext, ContentTypes(AllowedTypes));
+            search = FilterFactory.Instance.RestrictedTypesFilter(search, filterContext, ContentTypes(RestrictedTypes));
+            search = FilterFactory.Instance.ContentAccessFilter(search, filterContext);
+            search = FilterFactory.Instance.CultureFilter(search, filterContext);
+            search = FilterFactory.Instance.RootsFilter(search, filterContext);
+
+            var hits = search.Select(x => new ContentInLanguageReference(
+                new ContentReference(((IContent)x).ContentLink.ID, ((IContent)x).ContentLink.ProviderName),
+                ((ILocalizable)x).Language.Name));
+
+            var cacheDuration = FindToolboxOptions.Current.SearchProviderCacheDuration;
+            if (cacheDuration > TimeSpan.Zero)
+            {
+                var rootKey = ServiceLocator.Current.GetInstance<IContentCacheKeyCreator>().RootKeyName;
+#if NETFRAMEWORK
+                hits = hits.StaticallyCacheFor(cacheDuration, new System.Web.Caching.CacheDependency(null, new[] { rootKey }));
+#else
+                hits = hits.StaticallyCacheFor(cacheDuration, null, rootKey);
+#endif
+            }
+
+            // The CMS UI search provider API is synchronous (ISearchProvider.Search), so the synchronous Find call is intended.
+#pragma warning disable CS0618
+            var references = hits.GetResult();
+#pragma warning restore CS0618
+
+            return Load<TContent>(contentLoader, references).ToList();
+        }
+
         /// <summary>Max results: the smaller of what the UI asks for and <see cref="FindToolboxOptions.SearchProviderMaxResults"/>.</summary>
         public static int MaxResults(int requested)
         {
             var max = Math.Max(1, FindToolboxOptions.Current.SearchProviderMaxResults);
             return requested > 0 ? Math.Min(requested, max) : max;
+        }
+
+        private static ITypeSearch<IContentData> FieldQuery(string searchQuery, int maxResults, bool isPageSearch,
+            Func<IQueriedSearch<IContentData, QueryStringQuery>, IQueriedSearch<IContentData, QueryStringQuery>>? addContentSpecificFields)
+        {
+            var client = SearchClient.Instance;
+            if (string.IsNullOrEmpty(searchQuery))
+            {
+                searchQuery = "*";
+            }
+
+            var query = client.Search<IContentData>(ResolveLanguage(client)).For(searchQuery);
+
+            if (isPageSearch && IsAbsoluteUrl(searchQuery))
+            {
+                return query.InField(x => ((ISearchContent)x).SearchHitUrl).Take(maxResults);
+            }
+
+            query = Fields(query, searchQuery);
+
+            if (isPageSearch && DateTime.TryParse(searchQuery, out _))
+            {
+                query = query.InField(x => ((ISearchContent)x).SearchPublishDate.ToString(), 3);
+            }
+
+            if (addContentSpecificFields != null)
+            {
+                query = addContentSpecificFields(query);
+            }
+
+            return Toolbox(query).Take(maxResults).SetTimeout(10000);
         }
 
         /// <summary>
@@ -72,5 +173,31 @@ namespace EPiServer.Labs.Find.Toolbox.SearchProviders
                 }
             }
         }
+
+        /// <summary>The content types the UI asks for ("allowedTypes" / "restrictedTypes" are UI descriptor type identifiers).</summary>
+        private static IEnumerable<Type> ContentTypesFromQuery(Query query, string parameter, UIDescriptorRegistry uiDescriptorRegistry, Func<IEnumerable<ContentType>> listContentTypes)
+        {
+            if (!query.Parameters.ContainsKey(parameter) || !(query.Parameters[parameter] is JArray array))
+            {
+                return Enumerable.Empty<Type>();
+            }
+
+            return array.Values<string>().SelectMany(identifier =>
+            {
+                var uiDescriptor = uiDescriptorRegistry.UIDescriptors.FirstOrDefault(d => d.TypeIdentifier.Equals(identifier, StringComparison.OrdinalIgnoreCase));
+                return uiDescriptor == null
+                    ? Enumerable.Empty<Type>()
+                    : listContentTypes().Where(c => uiDescriptor.ForType.IsAssignableFrom(c.ModelType)).Select(c => c.ModelType);
+            }).ToList();
+        }
+
+        private static Language ResolveLanguage(IClient client)
+        {
+            var preferredCulture = ContentLanguage.PreferredCulture;
+            return (preferredCulture != null ? client.Settings.Languages.GetSupportedLanguage(preferredCulture) : null) ?? Language.None;
+        }
+
+        private static bool IsAbsoluteUrl(string text)
+            => Uri.TryCreate(text, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 }

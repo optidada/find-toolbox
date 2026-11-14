@@ -26,6 +26,7 @@ One package, two builds:
 - [Call order](#call-order)
 - [Examples](#examples)
 - [Configuration (limits and boosts)](#configuration-limits-and-boosts)
+- [Performance](#performance)
 - [CMS edit UI search providers](#cms-edit-ui-search-providers)
 - [Upgrading from 1.x / 2.x](#upgrading-from-1x--2x)
 - [Repository layout and tests](#repository-layout-and-tests)
@@ -303,8 +304,10 @@ The extensions rewrite the query created by `.For()`, so the order matters:
 ```
 
 - Without `.For()` the extensions do nothing (a trace message is logged).
-- Do not call Find's `.InField()` after `UsingRelevanceImproved()`, `FuzzyMatch()` or `WildcardMatch()`: those wrap
-  the query in a bool query.
+- Steps 4-7 work in any order after `.For()`: every toolbox extension finds and rewrites the same main query, also
+  when another extension has already wrapped it. The order above just reads best.
+- Use `.InFieldImproved()` (not Find's `.InField()`) if you add fields after `UsingRelevanceImproved()`,
+  `FuzzyMatch()` or `WildcardMatch()`: Find's `.InField()` only sees a query that has not been wrapped yet.
 
 ---
 
@@ -386,12 +389,15 @@ Everything is configurable through `FindToolboxOptions`. Defaults are safe for m
 **CMS 12** (`Startup.ConfigureServices`):
 
 ```csharp
-services.Configure<FindToolboxOptions>(options =>
+services.AddFindToolbox(options =>
 {
     options.MaxSynonymsPerPhrase = 5;
     options.SynonymCacheDuration = TimeSpan.FromMinutes(30);
 });
 ```
+
+(`AddFindToolbox()` is optional - the services register themselves - and equal to
+`services.Configure<FindToolboxOptions>(...)`.)
 
 **CMS 11** (an `IConfigurableModule`):
 
@@ -421,8 +427,10 @@ public class FindToolboxConfiguration : IConfigurableModule
 | `MaxQueriesForMatch` | 3 | Query variations (original + synonyms) used by `UsingRelevanceImproved()` |
 | `MaxRelevanceTerms` | 10 | Words in the relevance phrase queries |
 | `MinPrefixLength` | 3 | Min length for the single word prefix boost |
+| `PhraseSlop` | 2 | Words allowed between/around the words of the relevance phrase queries |
 | `MinFuzzyWildcardTermLength` / `Max...` | 3 / 16 | Word length for fuzzy/wildcard |
 | `MaxFuzzyWildcardTerms` | 3 | Words that get fuzzy/wildcard |
+| `MaxBoostedQueryLength` | 150 | The Find service rejects (400) query strings over 150 characters that contain `^` or `~`: synonyms are dropped (last first, never the user's words) / fewer fuzzy words until the query fits. 0 = off |
 | `FuzzyPrefixLength` | 1 | Leading characters that must match exactly in fuzzy matching |
 | `BooleanOperators` | `Ignore` | Upper case AND / OR / NOT: `Ignore` = plain words with all toolbox features, `Respect` = Find operators, toolbox leaves the query alone |
 | `FuzzyUseLanguageField` / `WildcardUseLanguageField` | on / on | Also search the language field (stems, compound parts) when the search has a language |
@@ -444,6 +452,44 @@ public class FindToolboxConfiguration : IConfigurableModule
 
 Use your own synonym source by registering an `ISynonymProvider` (the default is `SynonymLoader`, which reads the
 synonyms from Find).
+
+---
+
+## Performance
+
+Measured with `tests/EPiServer.Labs.Find.Toolbox.Benchmark` against a Find test index with 5 000 documents
+(~120 000 distinct terms; title + ~150 word body, English language routing). Server time (`took`) in ms,
+median / p95 of 5 runs per query (3-4 queries per column), every request uncached.
+
+| Configuration | 1 word | 2 words | 3 words | 5 words with typos | 10 words |
+|---|---:|---:|---:|---:|---:|
+| `For()` + `InField` (baseline) | 4 / 25 | 5 / 6 | 5 / 6 | 4 / 11 | 6 / 12 |
+| + `UsingSynonymsImproved()` | 4 / 10 | 5 / 8 | 6 / 29 | 4 / 12 | 6 / 49 |
+| + synonyms + `MinimumShouldMatch()` | 6 / 105 | 5 / 20 | 5 / 33 | 4 / 5 | 5 / 6 |
+| + `UsingRelevanceImproved()` | 4 / 22 | 4 / 7 | 5 / 6 | 4 / 8 | 6 / 25 |
+| + `FuzzyMatch()` (defaults) | 8 / 11 | 11 / 14 | 17 / 46 | 14 / 16 | 14 / 20 |
+| + `FuzzyMatch()`, `FuzzyPrefixLength = 0` | 12 / 15 | 19 / 24 | 26 / 30 | 27 / 40 | 28 / 75 |
+| + `FuzzyMatch()`, `FuzzyPrefixLength = 2` | 6 / 27 | 11 / 14 | 13 / 18 | 12 / 13 | 11 / 14 |
+| + `FuzzyMatch()`, no language field | 5 / 8 | 7 / 10 | 10 / 12 | 9 / 13 | 10 / 13 |
+| + `FuzzyMatch()`, 10 words | 7 / 11 | 11 / 14 | 14 / 18 | 21 / 35 | 33 / 67 |
+| + `WildcardMatch()` (defaults) | 5 / 11 | 5 / 37 | 6 / 8 | 4 / 6 | 6 / 166 |
+| + `WildcardMatch()`, double sided | 71 / 98 | 142 / 221 | 210 / 290 | 233 / 261 | 212 / 288 |
+| **Full chain (defaults)** | 9 / 23 | 12 / 16 | 17 / 22 | 16 / 28 | 16 / 47 |
+| Full chain, no limits | 15 / 61 | 20 / 36 | 30 / 37 | 42 / 45 | 78 / 131 |
+
+- The full chain with the defaults costs ~10 ms more server time than a plain search; the round trip (~30-40 ms
+  from a developer machine) is larger than that. Without the limits a 10 word query takes 5x longer.
+- Fuzzy is the expensive part: `FuzzyPrefixLength = 0` doubles its cost, 2 saves little but misses typos in the
+  second letter, so 1 stays the default. The language field adds ~40 % to fuzzy and finds stems/compound parts.
+- A leading wildcard (`WildcardMatch(boost, doubleSided: true, ...)`) is 15-40x slower: avoid it.
+- The p95 spikes are noise from the shared service; the medians are stable between runs.
+- Terms in the index matter more than documents for fuzzy/wildcard. Re-run the benchmark against an index like
+  yours: `cd tests/EPiServer.Labs.Find.Toolbox.Benchmark`, `dotnet run -- index`, `dotnet run -- bench`,
+  `dotnet run -- delete` (credentials from `FIND_SERVICEURL` / `FIND_DEFAULTINDEX`; use a test index).
+
+**Query length limit.** The Find service rejects a query string query longer than 150 characters when it contains
+`^` or `~` (400 `[query] is too long [max:150]`: the whole search fails). Synonym expansion with boosts can reach
+that from two words. `MaxBoostedQueryLength` (150) keeps the toolbox's queries within it.
 
 ---
 
@@ -475,6 +521,12 @@ content ID, and the page provider matches absolute URLs and publish dates.
 - `UsingSynonymService` and `SynonymLoader` take `FindToolboxOptions` (and `UsingSynonymService` an
   `ISynonymProvider`) in their constructors; only relevant if you construct them yourself.
 - Prefix boosting now starts at 3 characters (2.x: 2) and relevance phrases use at most 10 words.
+- `MinShouldMatchQueryStringQuery.QueriesForMatch` / `IsSingleClause` moved to its `Toolbox` property
+  (`ToolboxQueryState`); only relevant if you read them in your own code.
+- `QueryHelpers.GetFirstQueryStringQuery()` / `TryGetBoolQuery()` are obsolete (the extensions find the main query
+  internally) and `QueryHelpers.RemoveBooleanOperators()` was removed.
+- `InFieldImproved()` writes boosts with invariant culture (`^0.5`, not `^0,5` on e.g. a Swedish server) and works
+  after the other extensions.
 
 ---
 

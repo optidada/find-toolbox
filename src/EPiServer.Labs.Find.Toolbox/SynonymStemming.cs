@@ -35,7 +35,7 @@ namespace EPiServer.Labs.Find.Toolbox
         /// A word stemmer for the language of the search (by field suffix: en, sv, ...), or null when there is no language
         /// or no stemmer for it. Stemmer instances are not thread safe: call this per search.
         /// </summary>
-        public static Func<string, string> For(Language language)
+        public static Func<string, string>? For(Language? language)
         {
             if (language == null || language == Language.None || string.IsNullOrEmpty(language.FieldSuffix)
                 || !Stemmers.TryGetValue(language.FieldSuffix, out var create))

@@ -10,8 +10,9 @@ namespace EPiServer.Labs.Find.Toolbox
     /// </summary>
     public sealed class SynonymExpansion
     {
-        internal SynonymExpansion(string[] terms, string expandedQuery, bool hasSynonyms, IReadOnlyList<string> queriesForMatch, int clauseCount)
+        internal SynonymExpansion(string[] terms, string expandedQuery, bool hasSynonyms, IReadOnlyList<string> queriesForMatch, int clauseCount, int synonymsDropped = 0)
         {
+            SynonymsDropped = synonymsDropped;
             ClauseCount = clauseCount;
             Terms = terms;
             ExpandedQuery = expandedQuery;
@@ -41,6 +42,9 @@ namespace EPiServer.Labs.Find.Toolbox
         /// used by UsingRelevanceImproved() for phrase / prefix boosting.
         /// </summary>
         public IReadOnlyList<string> QueriesForMatch { get; }
+
+        /// <summary>Synonyms left out to keep the query within <see cref="FindToolboxOptions.MaxBoostedQueryLength"/>.</summary>
+        public int SynonymsDropped { get; }
     }
 
     /// <summary>
@@ -56,20 +60,19 @@ namespace EPiServer.Labs.Find.Toolbox
         /// Matching is greedy, left to right and longest phrase first, so overlapping phrases are never expanded twice.
         /// Lookups are case insensitive. Expansion is bounded by <paramref name="options"/> (defaults: <see cref="FindToolboxOptions"/>).
         /// </summary>
-        public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>> synonyms, FindToolboxOptions options = null)
+        public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>>? synonyms, FindToolboxOptions? options = null)
             => Expand(terms, synonyms, options, stem: null, languageKey: null);
 
         /// <summary>
         /// As <see cref="Expand(string[], IDictionary{string, HashSet{string}}, FindToolboxOptions)"/>, also matching synonyms
         /// by word stem when <paramref name="stem"/> is given (see <see cref="SynonymStemming"/>).
         /// </summary>
-        public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>> synonyms, FindToolboxOptions options, Func<string, string> stem, string languageKey)
+        public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>>? synonyms, FindToolboxOptions? options, Func<string, string>? stem, string? languageKey)
         {
             if (terms == null) throw new ArgumentNullException(nameof(terms));
             options = options ?? FindToolboxOptions.Defaults;
 
-            var queriesForMatch = new List<string> { string.Join(" ", terms) };
-            var parts = new List<string>();
+            var segments = new List<Segment>();
             var expandedPhrases = 0;
             var maxPhraseTerms = synonyms != null && synonyms.Count > 0
                 ? Math.Min(Math.Max(1, options.MaxSynonymPhraseTerms), GetLongestPhrase(synonyms))
@@ -85,21 +88,12 @@ namespace EPiServer.Labs.Find.Toolbox
                     for (var length = Math.Min(maxPhraseTerms, terms.Length - i); length >= 1; length--)
                     {
                         var phrase = string.Join(" ", terms, i, length);
-                        if (!TryGetSynonyms(synonyms, phrase, stem, languageKey, out var allSynonyms))
+                        if (!TryGetSynonyms(synonyms!, phrase, stem, languageKey, out var allSynonyms))
                         {
                             continue;
                         }
 
-                        var matchingSynonyms = allSynonyms.Take(Math.Max(1, options.MaxSynonymsPerPhrase)).ToList();
-                        parts.Add(ExpandPhrase(phrase, matchingSynonyms, options.SynonymBoost));
-
-                        var before = string.Join(" ", terms.Take(i));
-                        var after = string.Join(" ", terms.Skip(i + length));
-                        foreach (var synonym in matchingSynonyms)
-                        {
-                            queriesForMatch.Add(string.Join(" ", new[] { before, synonym, after }.Where(s => s.Length > 0)));
-                        }
-
+                        segments.Add(new Segment(i, length, phrase, allSynonyms.Take(Math.Max(1, options.MaxSynonymsPerPhrase)).ToList()));
                         expandedPhrases++;
                         matched = true;
                         i += length;
@@ -109,13 +103,67 @@ namespace EPiServer.Labs.Find.Toolbox
 
                 if (!matched)
                 {
-                    parts.Add(EscapeTerm(terms[i]));
+                    segments.Add(new Segment(i, 1, terms[i], new List<string>()));
                     i++;
                 }
             }
 
-            return new SynonymExpansion(terms, string.Join(" ", parts), expandedPhrases > 0, queriesForMatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), parts.Count);
+            // The Find service rejects a query_string query with boosts (^) or fuzzy (~) longer than 150 characters (400,
+            // the search fails): drop synonyms - from the group with the most synonyms, later groups first - until it fits.
+            var query = BuildQuery(terms, segments, options.SynonymBoost);
+            var dropped = 0;
+            while (options.MaxBoostedQueryLength > 0 && query.Length > options.MaxBoostedQueryLength && query.IndexOfAny(BoostOrFuzzy) >= 0)
+            {
+                var largest = segments.Where(x => x.Synonyms.Count > 0).OrderByDescending(x => x.Synonyms.Count).ThenByDescending(x => x.Start).FirstOrDefault();
+                if (largest == null)
+                {
+                    break;
+                }
+
+                largest.Synonyms.RemoveAt(largest.Synonyms.Count - 1);
+                dropped++;
+                query = BuildQuery(terms, segments, options.SynonymBoost);
+            }
+
+            var queriesForMatch = new List<string> { string.Join(" ", terms) };
+            foreach (var segment in segments)
+            {
+                var before = string.Join(" ", terms.Take(segment.Start));
+                var after = string.Join(" ", terms.Skip(segment.Start + segment.Length));
+                foreach (var synonym in segment.Synonyms)
+                {
+                    queriesForMatch.Add(string.Join(" ", new[] { before, synonym, after }.Where(x => x.Length > 0)));
+                }
+            }
+
+            var clauseCount = segments.Sum(x => x.Synonyms.Count > 0 ? 1 : x.Length);
+            return new SynonymExpansion(terms, query, segments.Any(x => x.Synonyms.Count > 0),
+                queriesForMatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), clauseCount, dropped);
         }
+
+        private static readonly char[] BoostOrFuzzy = { '^', '~' };
+
+        /// <summary>A matched phrase with its synonyms, or (no synonyms) the user's term(s) as they are.</summary>
+        private sealed class Segment
+        {
+            public Segment(int start, int length, string phrase, List<string> synonyms)
+            {
+                Start = start;
+                Length = length;
+                Phrase = phrase;
+                Synonyms = synonyms;
+            }
+
+            public int Start { get; }
+            public int Length { get; }
+            public string Phrase { get; }
+            public List<string> Synonyms { get; }
+        }
+
+        private static string BuildQuery(string[] terms, List<Segment> segments, double synonymBoost)
+            => string.Join(" ", segments.Select(x => x.Synonyms.Count > 0
+                ? ExpandPhrase(x.Phrase, x.Synonyms, synonymBoost)
+                : string.Join(" ", terms.Skip(x.Start).Take(x.Length).Select(EscapeTerm))));
 
         /// <summary>Longest phrase (in terms) in the synonym list; computed once per dictionary instance.</summary>
         internal static int GetLongestPhrase(IDictionary<string, HashSet<string>> synonyms)
@@ -125,7 +173,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 : d.Keys.Max(k => k.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length));
         }
 
-        private static bool TryGetSynonyms(IDictionary<string, HashSet<string>> synonyms, string phrase, Func<string, string> stem, string languageKey, out HashSet<string> matchingSynonyms)
+        private static bool TryGetSynonyms(IDictionary<string, HashSet<string>> synonyms, string phrase, Func<string, string>? stem, string? languageKey, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out HashSet<string> matchingSynonyms)
         {
             if (synonyms.TryGetValue(phrase, out matchingSynonyms) || synonyms.TryGetValue(phrase.ToLowerInvariant(), out matchingSynonyms))
             {

@@ -101,6 +101,16 @@ namespace EPiServer.Labs.Find.Toolbox
         /// <summary>Max terms in the match_phrase / match_phrase_prefix queries.</summary>
         public int MaxRelevanceTerms { get; set; } = 10;
 
+        /// <summary>
+        /// Max length of a query_string query that contains boosts (^) or fuzzy (~): the Find service rejects longer ones
+        /// with 400 "[query] is too long [max:150]" - the whole search fails. Synonyms are dropped (last added first, the
+        /// user's words never) until the expanded query fits; fuzzy/wildcard take fewer words. 0 = no limit.
+        /// </summary>
+        public int MaxBoostedQueryLength { get; set; } = 150;
+
+        /// <summary>match_phrase slop: words allowed between / around the phrase words in UsingRelevanceImproved().</summary>
+        public int PhraseSlop { get; set; } = 2;
+
         /// <summary>Min length of a single term query before a prefix query is added.</summary>
         public int MinPrefixLength { get; set; } = 3;
 
@@ -145,7 +155,7 @@ namespace EPiServer.Labs.Find.Toolbox
         /// <summary>Max hits returned by the CMS UI search providers.</summary>
         public int SearchProviderMaxResults { get; set; } = 20;
 
-        private static FindToolboxOptions _override;
+        private static FindToolboxOptions? _override;
 
         /// <summary>
         /// The registered options, or defaults when no service locator is available (e.g. unit tests).

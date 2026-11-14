@@ -2,7 +2,6 @@ using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Helpers.Text;
-using EPiServer.Find.Tracing;
 using EPiServer.Logging;
 using EPiServer.ServiceLocation;
 using System;
@@ -10,6 +9,10 @@ using System.Linq;
 
 namespace EPiServer.Labs.Find.Toolbox
 {
+    /// <summary>
+    /// UsingSynonymsImproved(): expands the main query with the synonyms of an <see cref="ISynonymProvider"/>, inside the one
+    /// query_string query, so a term and its synonyms count as one clause for MinimumShouldMatch and AND.
+    /// </summary>
     [ServiceConfiguration(Lifecycle = ServiceInstanceScope.Singleton)]
     public class UsingSynonymService
     {
@@ -17,7 +20,7 @@ namespace EPiServer.Labs.Find.Toolbox
         private readonly FindToolboxOptions _options;
         private static readonly ILogger log = LogManager.GetLogger(typeof(UsingSynonymService));
 
-        public UsingSynonymService(ISynonymProvider synonymProvider, FindToolboxOptions options)
+        public UsingSynonymService(ISynonymProvider synonymProvider, FindToolboxOptions? options)
         {
             _synonymProvider = synonymProvider ?? throw new ArgumentNullException(nameof(synonymProvider));
             _options = options ?? FindToolboxOptions.Defaults;
@@ -27,33 +30,20 @@ namespace EPiServer.Labs.Find.Toolbox
         {
             return new Search<TSource, QueryStringQuery>(search, context =>
             {
-                if (context.RequestBody.Query == null)
+                var main = MainQuery.Find(search, context, "UsingSynonymsImproved()");
+                if (main == null || main.RawQuery.IsNullOrEmpty())
                 {
                     return;
                 }
 
-                if (!QueryHelpers.GetFirstQueryStringQuery(context, out IQuery currentQuery, out BoolQuery currentBoolQuery))
+                // AND / OR / NOT: respected => leave the query exactly as Find interprets it; ignored (default) => removed
+                if (main.LeaveToFind(_options))
                 {
-                    Trace.Instance.Add(new TraceEvent(search, "The use of synonyms are only supported for QueryStringQueries, i.e. with the use of the .For() -extensions. The query will be executed without the use of synonyms.") { IsError = false });
+                    log.Debug("UsingSynonymsImproved: query uses boolean operators, not expanded: {0}", main.RawQuery);
                     return;
                 }
 
-                var queryStringQuery = (QueryStringQuery)currentQuery;
-                var rawQuery = QueryHelpers.GetRawQueryString(queryStringQuery);
-                if (rawQuery.IsNullOrEmpty())
-                {
-                    return;
-                }
-
-                // AND / OR / NOT: respected => leave the query exactly as Find interprets it; ignored (default) => remove them
-                if (QueryHelpers.RespectsBooleanOperators(rawQuery, _options))
-                {
-                    log.Debug("UsingSynonymsImproved: query uses boolean operators, not expanded: {0}", rawQuery);
-                    return;
-                }
-                queryStringQuery = QueryHelpers.RemoveBooleanOperators(context, queryStringQuery, currentBoolQuery, _options);
-
-                var terms = QueryHelpers.GetQueryPhrases(rawQuery, _options.MaxQueryTerms);
+                var terms = QueryHelpers.GetQueryPhrases(main.RawQuery, _options.MaxQueryTerms);
                 if (terms.Length == 0)
                 {
                     return;
@@ -63,16 +53,16 @@ namespace EPiServer.Labs.Find.Toolbox
                     stem: _options.StemSynonymLookup ? SynonymStemming.For(context.ContentLanguage) : null,
                     languageKey: context.ContentLanguage?.FieldSuffix);
 
-                // Without synonym matches the user's query is left untouched (including any operators),
-                // we only record the match variations for UsingRelevanceImproved().
-                var queryText = expansion.HasSynonyms ? expansion.ExpandedQuery : queryStringQuery.Query?.ToString();
+                // Without synonym matches the user's query is kept as it is; the match variations are still recorded for
+                // UsingRelevanceImproved().
+                var queryText = expansion.HasSynonyms ? expansion.ExpandedQuery : main.Query.Query?.ToString();
 
-                var newQuery = CreateQuery(queryText, queryStringQuery);
-                newQuery.QueriesForMatch = expansion.QueriesForMatch.Take(Math.Max(1, _options.MaxQueriesForMatch)).ToArray();
+                var newQuery = CreateQuery(queryText, main.Query);
+                newQuery.Toolbox.QueriesForMatch = expansion.QueriesForMatch.Take(Math.Max(1, _options.MaxQueriesForMatch)).ToArray();
                 // One top level clause (one word or one synonym group): minimum_should_match has nothing to count
-                newQuery.IsSingleClause = expansion.ClauseCount == 1;
+                newQuery.Toolbox.IsSingleClause = expansion.ClauseCount == 1;
 
-                ReplaceQuery(context, currentBoolQuery, newQuery);
+                main.Replace(newQuery);
                 log.Debug("UsingSynonymsImproved: {0}", queryText);
             });
         }
@@ -82,16 +72,13 @@ namespace EPiServer.Labs.Find.Toolbox
         /// Keeping everything in ONE query is what makes MinimumShouldMatch and AND work together with synonyms:
         /// each synonym group is a single top level clause.
         /// </summary>
-        internal static MinShouldMatchQueryStringQuery CreateQuery(string query, QueryStringQuery source)
+        internal static MinShouldMatchQueryStringQuery CreateQuery(string? query, QueryStringQuery source)
         {
-            var newQuery = new MinShouldMatchQueryStringQuery(query);
-            QueryHelpers.CopySettings(source, newQuery);
+            var newQuery = QueryHelpers.CreateToolboxQuery(query, source);
 
-            var minimumShouldMatch = (source as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch;
-            if (minimumShouldMatch.IsNotNullOrEmpty())
+            if (newQuery.MinimumShouldMatch.IsNotNullOrEmpty())
             {
                 // MinimumShouldMatch() takes precedence over WithAndAsDefaultOperator(); it only works with OR.
-                newQuery.MinimumShouldMatch = minimumShouldMatch;
                 newQuery.DefaultOperator = BooleanOperator.Or;
             }
             else
@@ -102,17 +89,6 @@ namespace EPiServer.Labs.Find.Toolbox
             }
 
             return newQuery;
-        }
-
-        private static void ReplaceQuery(ISearchContext context, BoolQuery currentBoolQuery, IQuery newQuery)
-        {
-            if (currentBoolQuery != null && currentBoolQuery.Should.Count > 0 && ReferenceEquals(context.RequestBody.Query, currentBoolQuery))
-            {
-                currentBoolQuery.Should[0] = newQuery;
-                return;
-            }
-
-            context.RequestBody.Query = newQuery;
         }
     }
 }

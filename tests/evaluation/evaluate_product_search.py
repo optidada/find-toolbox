@@ -1,4 +1,6 @@
 """
+Run with both test sites started (see README). Writes evaluation.json.
+
 Search quality evaluation on the product demo: plain Find (OR / AND, built-in synonyms) vs the Find Toolbox.
 Relevant products per query are judged from the product data.
 """

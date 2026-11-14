@@ -155,6 +155,18 @@ Measured on the Swedish demo products (Swedish language pages, both CMS 11 + Fin
 | `lampa` | Skrivbordslampa | - |
 | `koppar` (plural) | Kaffekopp | - |
 
+Fuzzy matching on the language field also forgives typos inside compound parts, which the language neutral field
+cannot (`FuzzyUseLanguageField`, default on). Measured on 8 Swedish typo/compound queries: 10 of 10 relevant products
+found with it, 5 of 10 without; it adds a few unrelated hits (e.g. `kopp` also finds a "Vattenkokare"), ranked below
+the relevant ones. The English evaluation is unchanged either way.
+
+| Query (Swedish) | Fuzzy on the language field | Language neutral field only |
+|---|---|---|
+| `masskin` | Diskmaskin, Tvättmaskin | - |
+| `lamap` | Skrivbordslampa | - |
+| `kafe` | Kaffebryggare, Kaffekopp | - |
+| `väskor` | Datorväska | - |
+
 Use the language of the content: English has no decompounding (`note` does not find "notebook"), and a Swedish
 analyzer on English text would not help either.
 
@@ -404,6 +416,7 @@ public class FindToolboxConfiguration : IConfigurableModule
 | `MinFuzzyWildcardTermLength` / `Max...` | 3 / 16 | Word length for fuzzy/wildcard |
 | `MaxFuzzyWildcardTerms` | 3 | Words that get fuzzy/wildcard |
 | `FuzzyPrefixLength` | 1 | Leading characters that must match exactly in fuzzy matching |
+| `FuzzyUseLanguageField` / `WildcardUseLanguageField` | on / on | Also search the language field (stems, compound parts) when the search has a language |
 | **Boosts** | | Tuned against a live index, see the relevance tests |
 | `PhraseBoost` | 10 | Field contains the phrase/word |
 | `PhrasePrefixBoost` | 5 | Field starts with the phrase |

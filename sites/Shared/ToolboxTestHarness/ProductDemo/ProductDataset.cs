@@ -150,6 +150,10 @@ namespace ToolboxTestHarness.ProductDemo
         public bool Relevance { get; set; } = true;
         public bool Fuzzy { get; set; } = true;
         public bool Wildcard { get; set; } = true;
+        /// <summary>Override FindToolboxOptions.FuzzyUseLanguageField / WildcardUseLanguageField (tuning; test sites only).</summary>
+        public bool? FuzzyLanguageField { get; set; }
+        public bool? WildcardLanguageField { get; set; }
+
         /// <summary>Bypass caches (tests).</summary>
         public bool NoCache { get; set; }
     }
@@ -171,6 +175,8 @@ namespace ToolboxTestHarness.ProductDemo
         public List<ProductHit> Hits { get; set; } = new List<ProductHit>();
         /// <summary>facet name => value => count (category, brand, color, price).</summary>
         public Dictionary<string, Dictionary<string, int>> Facets { get; set; } = new Dictionary<string, Dictionary<string, int>>();
+        /// <summary>The counts for the query without any facet selections ("of N" in the UI).</summary>
+        public Dictionary<string, Dictionary<string, int>> FacetTotals { get; set; } = new Dictionary<string, Dictionary<string, int>>();
         public string ToolboxChain { get; set; }
         public string QueryJson { get; set; }
     }

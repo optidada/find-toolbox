@@ -102,6 +102,7 @@ namespace ToolboxTestHarness.ProductDemo
                 result.Total = response.TotalMatching;
                 result.Hits = Hits(response);
                 result.Facets = FacetsFromTerms(response);
+                result.FacetTotals = result.Facets;
                 result.QueryJson = QueryJson(search);
             }
             else
@@ -110,6 +111,9 @@ namespace ToolboxTestHarness.ProductDemo
                 var valuesSearch = WithTermsFacets(baseSearch).Take(0).Select(x => x.Name);
                 var values = FacetsFromTerms(await GetResultAsync(Cache(valuesSearch, request, TimeSpan.FromMinutes(1))));
                 requests++;
+
+                // The counts without any selections: shown as "of N" next to the narrowed counts
+                result.FacetTotals = values.ToDictionary(f => f.Key, f => new Dictionary<string, int>(f.Value));
 
                 // Selected values must always be listed, also when they have no hits for this query
                 AddSelected(values, "category", request.Category);

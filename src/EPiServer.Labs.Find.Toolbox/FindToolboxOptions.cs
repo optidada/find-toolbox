@@ -93,6 +93,15 @@ namespace EPiServer.Labs.Find.Toolbox
         public int MaxFuzzyWildcardTerms { get; set; } = 3;
 
         /// <summary>
+        /// FuzzyMatch() also searches the language field (.sv, .en, ...) when the search has a language. That field holds
+        /// stems and compound parts: short terms that a one-edit fuzzy match easily hits by accident.
+        /// </summary>
+        public bool FuzzyUseLanguageField { get; set; } = true;
+
+        /// <summary>WildcardMatch() also searches the language field (.sv, .en, ...) when the search has a language.</summary>
+        public bool WildcardUseLanguageField { get; set; } = true;
+
+        /// <summary>
         /// Number of leading characters that must match exactly in fuzzy matching. 1 (default): "ait" finds "air",
         /// "lapotp" finds "laptop". Higher values are cheaper but never correct a typo within the first characters
         /// (upstream used 3, which made fuzzy matching start at 4 characters).

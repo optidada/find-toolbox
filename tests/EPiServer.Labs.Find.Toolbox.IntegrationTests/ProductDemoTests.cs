@@ -114,6 +114,10 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             // the other facets follow the brand filter
             Assert.Equal(2, result.Facets["color"].Values.Sum());
             Assert.Equal(2, result.Facets["price"].Values.Sum());
+
+            // and the counts without selections are kept for "1 of 3"
+            Assert.Equal(8, result.FacetTotals["color"].Values.Sum());
+            Assert.Equal(8, result.FacetTotals["brand"].Values.Sum());
         }
 
         [SkippableTheory]
@@ -180,6 +184,22 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
 
             Assert.Contains(compound, swedish.Hits.Select(h => h.Name));
             Assert.DoesNotContain(compound, english.Hits.Select(h => h.Name));
+        }
+
+        [SkippableTheory]
+        [InlineData("cms11", "masskin", "Diskmaskin integrerad")]   // typo in a compound part
+        [InlineData("cms11", "lamap", "Skrivbordslampa LED")]
+        [InlineData("cms11", "väskor", "Datorväska 15 tum")]        // plural of a compound part
+        [InlineData("cms12", "masskin", "Diskmaskin integrerad")]
+        [InlineData("cms12", "lamap", "Skrivbordslampa LED")]
+        [InlineData("cms12", "väskor", "Datorväska 15 tum")]
+        public async Task Fuzzy_on_the_language_field_forgives_typos_in_compound_parts(string site, string query, string expected)
+        {
+            var withLanguageField = await Search(site, Q(query) + "&lang=sv");
+            var withoutLanguageField = await Search(site, Q(query) + "&lang=sv&fuzzyLanguageField=false");
+
+            Assert.Contains(expected, withLanguageField.Hits.Select(h => h.Name));
+            Assert.DoesNotContain(expected, withoutLanguageField.Hits.Select(h => h.Name));
         }
 
         [SkippableTheory]

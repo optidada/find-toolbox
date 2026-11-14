@@ -54,6 +54,7 @@
         aside a:hover { background: #e6ecff; }
         aside a.selected { background: #0b5fff; color: #fff; }
         aside a.empty { color: #aaa; }
+        aside a small.of { opacity: .6; font-size: 11px; }
         section.results { flex: 1; }
         .summary { margin-bottom: 12px; color: #555; }
         .product { background: #fff; border: 1px solid #e2e2e2; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; }
@@ -93,7 +94,9 @@
                 foreach (var key in keys)
                 {
                     var count = counts.ContainsKey(key) ? counts[key] : 0;
-                    <a href="@Link(facet, key)" class="@(Selected(facet, key) ? "selected" : count == 0 ? "empty" : "")"><span>@(facet == "price" ? "$" + key : key)</span><span>@count</span></a>
+                    var totals = Model.FacetTotals.ContainsKey(facet) ? Model.FacetTotals[facet] : counts;
+                    var total = totals.ContainsKey(key) ? totals[key] : count;
+                    <a href="@Link(facet, key)" class="@(Selected(facet, key) ? "selected" : count == 0 ? "empty" : "")" title="@count of @total without facet selections"><span>@(facet == "price" ? "$" + key : key)</span><span>@count@if (total != count) {<small class="of"> of @total</small>}</span></a>
                 }
             }
         </aside>
@@ -151,7 +154,7 @@
                 }
                 <pre>@Model.ToolboxChain</pre>
                 <details><summary>Query sent to Find</summary><pre>@Model.QueryJson</pre></details>
-                <p>Facet counts: each facet is counted with the filters of the other facets applied, so you can select several values in one facet.</p>
+                <p>Facet counts: each facet is counted with the filters of the other facets applied, so you can select several values in one facet. "1 of 3" = 1 with the current selections, 3 for the search without facet selections.</p>
             </div>
         </section>
     </main>

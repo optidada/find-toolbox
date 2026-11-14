@@ -229,7 +229,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors);
+                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors, FindToolboxOptions.Current.FuzzyUseLanguageField);
 
                 var fuzzyQueryString = string.Join(" ", candidateTerms);
                 var fuzzyQueryStringQuery = new MinShouldMatchQueryStringQuery(fuzzyQueryString)
@@ -307,7 +307,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors);
+                var fieldNames = SearchFieldNames(search.Client, context, fieldSelectors, FindToolboxOptions.Current.WildcardUseLanguageField);
 
                 var wildcardQueryString = string.Join(" ", candidateTerms);
                 var wildcardQuery = new MinShouldMatchQueryStringQuery(wildcardQueryString)
@@ -328,12 +328,12 @@ namespace EPiServer.Labs.Find.Toolbox
         /// The language neutral field (.standard) and, when the search has a language, the language field (.en, .sv, ...)
         /// whose analyzer stems and (for compounding languages) decompounds at index time - the same pair InField() uses.
         /// </summary>
-        private static List<string> SearchFieldNames<TSource>(IClient client, ISearchContext context, IEnumerable<Expression<Func<TSource, string>>> fieldSelectors)
+        private static List<string> SearchFieldNames<TSource>(IClient client, ISearchContext context, IEnumerable<Expression<Func<TSource, string>>> fieldSelectors, bool useLanguageField)
         {
             var fieldNames = new List<string>();
             foreach (var fieldSelector in fieldSelectors)
             {
-                if (context.ContentLanguage != null && context.ContentLanguage != Language.None)
+                if (useLanguageField && context.ContentLanguage != null && context.ContentLanguage != Language.None)
                 {
                     fieldNames.Add(client.Conventions.FieldNameConvention.GetFieldNameForSearch(fieldSelector, context.ContentLanguage));
                 }

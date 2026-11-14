@@ -426,10 +426,27 @@ namespace ToolboxTestHarness
         private ProductSearchService Products => new ProductSearchService(_contentRepository, _client);
 
         /// <summary>Faceted product search (/product-demo and /toolbox-test/products).</summary>
-        public Task<ProductSearchResult> ProductSearchAsync(ProductSearchRequest request)
-            => Products.SearchAsync(request,
-                GetOrCreateContainer(ProductDataset.ContainerName).ContentLink,
-                GetOrCreateContainer(ProductDataset.SwedishContainerName).ContentLink);
+        public async Task<ProductSearchResult> ProductSearchAsync(ProductSearchRequest request)
+        {
+            // Overrides mutate the shared options: serialize (test sites only)
+            await OptionsLock.WaitAsync();
+            var fuzzy = _options.FuzzyUseLanguageField;
+            var wildcard = _options.WildcardUseLanguageField;
+            try
+            {
+                _options.FuzzyUseLanguageField = request.FuzzyLanguageField ?? fuzzy;
+                _options.WildcardUseLanguageField = request.WildcardLanguageField ?? wildcard;
+                return await Products.SearchAsync(request,
+                    GetOrCreateContainer(ProductDataset.ContainerName).ContentLink,
+                    GetOrCreateContainer(ProductDataset.SwedishContainerName).ContentLink);
+            }
+            finally
+            {
+                _options.FuzzyUseLanguageField = fuzzy;
+                _options.WildcardUseLanguageField = wildcard;
+                OptionsLock.Release();
+            }
+        }
 
         /// <summary>The Swedish demo products need Swedish enabled on the site (Alloy has it, but make sure).</summary>
         private static void EnsureLanguageEnabled(string language)

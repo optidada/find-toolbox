@@ -3,6 +3,8 @@ using EPiServer.Core;
 using EPiServer.DataAccess;
 using EPiServer.Find;
 using EPiServer.Find.Api.Facets;
+using EPiServer.Find.Api.Querying;
+using EPiServer.Find.Api.Querying.Filters;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Cms;
 using EPiServer.Find.Json;
@@ -71,61 +73,159 @@ namespace ToolboxTestHarness.ProductDemo
             return pages;
         }
 
+        /// <summary>
+        /// One Find request per search (plus a cached facet value list when facets are selected):
+        /// - nothing selected: hits + terms/range facets in one request, counts are exact;
+        /// - facets selected: hits are narrowed with FilterHits (post filter, does not affect facets) and every facet
+        ///   value is counted with a FilterFacet of "the other facets' selections AND this value", all in one request.
+        ///   Which values a facet has comes from the terms facets of the query alone, cached for a minute.
+        /// </summary>
         public async Task<ProductSearchResult> SearchAsync(ProductSearchRequest request, ContentReference container)
         {
             var containerId = container.ID.ToString(CultureInfo.InvariantCulture);
             var chain = new List<string>();
             var baseSearch = BaseSearch(request, containerId, chain);
+            var anySelected = request.Category.Count + request.Brand.Count + request.Color.Count + request.Price.Count > 0;
+            var requests = 0;
 
-            // Hits: all filters
-            var hitsSearch = ApplyFilters(baseSearch, request, except: null)
-                .Take(40)
-                .Select(x => new ProductHit { Name = x.Name, Category = x.ProductCategory, Brand = x.Brand, Color = x.Color, Price = x.Price });
+            var result = new ProductSearchResult { Request = request, ToolboxChain = string.Join(Environment.NewLine, chain) };
 
-            // Facets: one search per facet, with the filters of the other facets
-            var categorySearch = ApplyFilters(baseSearch, request, "category").TermsFacetFor(x => x.ProductCategory, f => f.Size = 20).Take(0).Select(x => x.Name);
-            var brandSearch = ApplyFilters(baseSearch, request, "brand").TermsFacetFor(x => x.Brand, f => f.Size = 20).Take(0).Select(x => x.Name);
-            var colorSearch = ApplyFilters(baseSearch, request, "color").TermsFacetFor(x => x.Color, f => f.Size = 20).Take(0).Select(x => x.Name);
-            var priceSearch = ApplyFilters(baseSearch, request, "price")
-                .RangeFacetFor(x => x.Price, ProductDataset.PriceRanges.Select(r => new NumericRange(r.From, r.To)).ToArray())
-                .Take(0).Select(x => x.Name);
-
-#if NETFRAMEWORK
-            var hits = hitsSearch.GetResult();
-            var categories = categorySearch.GetResult();
-            var brands = brandSearch.GetResult();
-            var colors = colorSearch.GetResult();
-            var prices = priceSearch.GetResult();
-            await Task.CompletedTask;
-#else
-            var hitsTask = hitsSearch.GetResultAsync();
-            var categoriesTask = categorySearch.GetResultAsync();
-            var brandsTask = brandSearch.GetResultAsync();
-            var colorsTask = colorSearch.GetResultAsync();
-            var pricesTask = priceSearch.GetResultAsync();
-            await Task.WhenAll(hitsTask, categoriesTask, brandsTask, colorsTask, pricesTask);
-            var hits = hitsTask.Result;
-            var categories = categoriesTask.Result;
-            var brands = brandsTask.Result;
-            var colors = colorsTask.Result;
-            var prices = pricesTask.Result;
-#endif
-
-            var result = new ProductSearchResult
+            if (!anySelected)
             {
-                Request = request,
-                Total = hits.TotalMatching,
-                Hits = hits.Hits.Select(h => { h.Document.Score = h.Score ?? 0; return h.Document; }).ToList(),
-                ToolboxChain = string.Join(Environment.NewLine, chain),
-                QueryJson = QueryJson(hitsSearch),
-            };
+                var search = WithTermsFacets(baseSearch)
+                    .Take(40)
+                    .Select(x => new ProductHit { Name = x.Name, Category = x.ProductCategory, Brand = x.Brand, Color = x.Color, Price = x.Price });
+                var response = await GetResultAsync(Cache(search, request, TimeSpan.FromSeconds(30)));
+                requests++;
 
-            result.Facets["category"] = Terms(categories);
-            result.Facets["brand"] = Terms(brands);
-            result.Facets["color"] = Terms(colors);
-            result.Facets["price"] = Ranges(prices);
+                result.Total = response.TotalMatching;
+                result.Hits = Hits(response);
+                result.Facets = FacetsFromTerms(response);
+                result.QueryJson = QueryJson(search);
+            }
+            else
+            {
+                // Facet values for the query, independent of the selections: cacheable
+                var valuesSearch = WithTermsFacets(baseSearch).Take(0).Select(x => x.Name);
+                var values = FacetsFromTerms(await GetResultAsync(Cache(valuesSearch, request, TimeSpan.FromMinutes(1))));
+                requests++;
+
+                // Selected values must always be listed, also when they have no hits for this query
+                AddSelected(values, "category", request.Category);
+                AddSelected(values, "brand", request.Brand);
+                AddSelected(values, "color", request.Color);
+
+                var search = baseSearch.FilterHits(SelectedFilter(request, except: null));
+                var facetNames = new Dictionary<string, (string Facet, string Value)>();
+                foreach (var facet in values)
+                {
+                    foreach (var value in facet.Value.Keys)
+                    {
+                        var name = "f" + facetNames.Count;
+                        facetNames[name] = (facet.Key, value);
+                        search = search.FilterFacet(name, new AndFilter(new[] { SelectedFilter(request, except: facet.Key), ValueFilter(facet.Key, value) }.Where(f => f != null).ToArray()));
+                    }
+                }
+
+                var hitsSearch = search
+                    .Take(40)
+                    .Select(x => new ProductHit { Name = x.Name, Category = x.ProductCategory, Brand = x.Brand, Color = x.Color, Price = x.Price });
+                var response = await GetResultAsync(Cache(hitsSearch, request, TimeSpan.FromSeconds(30)));
+                requests++;
+
+                result.Total = response.TotalMatching;
+                result.Hits = Hits(response);
+                result.QueryJson = QueryJson(hitsSearch);
+                foreach (var facet in values)
+                {
+                    result.Facets[facet.Key] = facet.Value.Keys.ToDictionary(v => v, v => 0);
+                }
+                foreach (var named in facetNames)
+                {
+                    result.Facets[named.Value.Facet][named.Value.Value] = response.FilterFacet(named.Key)?.Count ?? 0;
+                }
+            }
+
+            result.ToolboxChain += Environment.NewLine + "// Find requests for this page: " + requests + (request.NoCache ? "" : " (or fewer: cached)");
             return result;
         }
+
+        private ITypeSearch<DemoProductPage> WithTermsFacets(ITypeSearch<DemoProductPage> search)
+            => search
+                .TermsFacetFor(x => x.ProductCategory, f => f.Size = 20)
+                .TermsFacetFor(x => x.Brand, f => f.Size = 20)
+                .TermsFacetFor(x => x.Color, f => f.Size = 20)
+                .RangeFacetFor(x => x.Price, ProductDataset.PriceRanges.Select(r => new NumericRange(r.From, r.To)).ToArray());
+
+        /// <summary>Identical searches are served from the cache unless the caller needs fresh results (tests).</summary>
+        private static ISearch<T> Cache<T>(ISearch<T> search, ProductSearchRequest request, TimeSpan duration)
+            => request.NoCache ? search : search.StaticallyCacheFor(duration);
+
+        private static List<ProductHit> Hits(SearchResults<ProductHit> response)
+            => response.Hits.Select(h => { h.Document.Score = h.Score ?? 0; return h.Document; }).ToList();
+
+        private static void AddSelected(Dictionary<string, Dictionary<string, int>> facets, string facet, IEnumerable<string> selected)
+        {
+            foreach (var value in selected.Where(v => !facets[facet].ContainsKey(v)))
+            {
+                facets[facet][value] = 0;
+            }
+        }
+
+        private static Dictionary<string, Dictionary<string, int>> FacetsFromTerms<T>(SearchResults<T> response)
+        {
+            var terms = response.Facets.OfType<TermsFacet>().ToList();
+            Dictionary<string, int> Terms(string field) => terms
+                .Where(t => t.Name.StartsWith(field, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(t => t.Terms)
+                .ToDictionary(t => t.Term, t => t.Count);
+
+            return new Dictionary<string, Dictionary<string, int>>
+            {
+                ["category"] = Terms("ProductCategory"),
+                ["brand"] = Terms("Brand"),
+                ["color"] = Terms("Color"),
+                ["price"] = Ranges(response),
+            };
+        }
+
+        /// <summary>The selected facet values of all facets except <paramref name="except"/> (null = all), or null if none.</summary>
+        private Filter SelectedFilter(ProductSearchRequest request, string except)
+        {
+            var filters = new List<Filter>();
+            foreach (var facet in new[] { "category", "brand", "color", "price" }.Where(f => f != except))
+            {
+                var selected = facet == "category" ? request.Category : facet == "brand" ? request.Brand : facet == "color" ? request.Color : request.Price;
+                if (selected.Count > 0)
+                {
+                    filters.Add(new OrFilter(selected.Select(v => ValueFilter(facet, v)).ToArray()));
+                }
+            }
+
+            return filters.Count == 0 ? null : filters.Count == 1 ? filters[0] : new AndFilter(filters.ToArray());
+        }
+
+        private Filter ValueFilter(string facet, string value)
+        {
+            var builder = _client.BuildFilter<DemoProductPage>();
+            switch (facet)
+            {
+                case "category": return builder.And(x => x.ProductCategory.Match(value));
+                case "brand": return builder.And(x => x.Brand.Match(value));
+                case "color": return builder.And(x => x.Color.Match(value));
+                default:
+                    var range = ProductDataset.PriceRanges.First(r => r.Key == value);
+                    if (range.From == null) return builder.And(x => x.Price.LessThan(range.To.Value));
+                    if (range.To == null) return builder.And(x => x.Price.GreaterThan(range.From.Value - 0.001));
+                    return builder.And(x => x.Price.InRange(range.From.Value, range.To.Value - 0.001));
+            }
+        }
+
+#if NETFRAMEWORK
+        private static Task<SearchResults<T>> GetResultAsync<T>(ISearch<T> search) => Task.FromResult(search.GetResult());
+#else
+        private static Task<SearchResults<T>> GetResultAsync<T>(ISearch<T> search) => search.GetResultAsync();
+#endif
 
         /// <summary>The query (with the toolbox) and the container filter, without facet filters.</summary>
         private ITypeSearch<DemoProductPage> BaseSearch(ProductSearchRequest request, string containerId, List<string> chain)
@@ -156,9 +256,7 @@ namespace ToolboxTestHarness.ProductDemo
                     chain.Add("    .UsingSynonyms()   // Find's built-in synonyms");
                     search = queried;
                     chain.Add("    .Filter(selected facets) .TermsFacetFor(...) .RangeFacetFor(x => x.Price, ...)");
-                    return search
-                        .Filter(x => x.Ancestors().Match(containerId))
-                        .Filter(x => !x.Name.Match("nocache-" + Guid.NewGuid().ToString("N")));
+                    return Scope(search, request, containerId);
                 }
 
                 if (!string.IsNullOrWhiteSpace(request.Msm))
@@ -197,63 +295,10 @@ namespace ToolboxTestHarness.ProductDemo
 
             chain.Add("    .Filter(selected facets) .TermsFacetFor(...) .RangeFacetFor(x => x.Price, ...)");
 
-            return search
-                .Filter(x => x.Ancestors().Match(containerId))
-                // The Find service sits behind a CDN: make every request unique
-                .Filter(x => !x.Name.Match("nocache-" + Guid.NewGuid().ToString("N")));
+            return Scope(search, request, containerId);
         }
 
-        private ITypeSearch<DemoProductPage> ApplyFilters(ITypeSearch<DemoProductPage> search, ProductSearchRequest request, string except)
-        {
-            if (except != "category" && request.Category.Count > 0)
-            {
-                search = search.Filter(x => x.ProductCategory.In(request.Category));
-            }
-
-            if (except != "brand" && request.Brand.Count > 0)
-            {
-                search = search.Filter(x => x.Brand.In(request.Brand));
-            }
-
-            if (except != "color" && request.Color.Count > 0)
-            {
-                search = search.Filter(x => x.Color.In(request.Color));
-            }
-
-            if (except != "price" && request.Price.Count > 0)
-            {
-                var filter = _client.BuildFilter<DemoProductPage>();
-                foreach (var range in ProductDataset.PriceRanges.Where(r => request.Price.Contains(r.Key)))
-                {
-                    if (range.From == null)
-                    {
-                        filter = filter.Or(x => x.Price.LessThan(range.To.Value));
-                    }
-                    else if (range.To == null)
-                    {
-                        filter = filter.Or(x => x.Price.GreaterThan(range.From.Value - 0.001));
-                    }
-                    else
-                    {
-                        filter = filter.Or(x => x.Price.InRange(range.From.Value, range.To.Value - 0.001));
-                    }
-                }
-
-                search = search.Filter(filter);
-            }
-
-            return search;
-        }
-
-        private static Dictionary<string, int> Terms(IHasFacetResults<string> result)
-        {
-            var facet = result.Facets.OfType<TermsFacet>().FirstOrDefault();
-            return facet == null
-                ? new Dictionary<string, int>()
-                : facet.Terms.ToDictionary(t => t.Term, t => t.Count);
-        }
-
-        private static Dictionary<string, int> Ranges(IHasFacetResults<string> result)
+        private static Dictionary<string, int> Ranges(IHasFacetResults result)
         {
             var facet = result.Facets.OfType<NumericRangeFacet>().FirstOrDefault();
             var counts = new Dictionary<string, int>();
@@ -264,6 +309,14 @@ namespace ToolboxTestHarness.ProductDemo
             }
 
             return counts;
+        }
+
+        private static ITypeSearch<DemoProductPage> Scope(ITypeSearch<DemoProductPage> search, ProductSearchRequest request, string containerId)
+        {
+            search = search.Filter(x => x.Ancestors().Match(containerId));
+
+            // Tests need the index as it is right now: the Find service sits behind a CDN, so make the request unique
+            return request.NoCache ? search.Filter(x => !x.Name.Match("nocache-" + Guid.NewGuid().ToString("N"))) : search;
         }
 
         private static string QueryJson(ISearch search)

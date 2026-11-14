@@ -58,6 +58,23 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
             Assert.Null(single["minimum_should_match"]);
         }
 
+        [Theory]
+        [InlineData("automobile")]
+        [InlineData("\"new york\"")]
+        public void Single_word_does_not_send_msm(string query)
+        {
+            // Found against a live index: Find's English analyzer makes word + stem of "automobile", which 100% then both required
+            var single = Assert.Single(QueryStrings(QueryJson(For(query).MinimumShouldMatch("100%"))));
+            Assert.Null(single["minimum_should_match"]);
+        }
+
+        [Fact]
+        public void Two_words_still_send_msm()
+        {
+            var single = Assert.Single(QueryStrings(QueryJson(For("automobile insurance").MinimumShouldMatch("100%"))));
+            Assert.Equal("100%", (string)single["minimum_should_match"]);
+        }
+
         [Fact]
         public void Single_synonym_group_still_passes_msm_on_to_FuzzyMatch()
         {

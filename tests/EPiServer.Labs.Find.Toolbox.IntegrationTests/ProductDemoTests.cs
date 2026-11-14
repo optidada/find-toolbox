@@ -29,7 +29,7 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             var client = await SiteClient.GetSeededAsync(site);
             Skip.If(client == null, $"Set TOOLBOX_{site.ToUpperInvariant()}_URL to run against the {site} site.");
 
-            var url = SiteClient.GetUrl(site).TrimEnd('/') + "/toolbox-test/products?" + query;
+            var url = SiteClient.GetUrl(site).TrimEnd('/') + "/toolbox-test/products?nocache=true&" + query;
             var result = JsonSerializer.Deserialize<ProductSearchResult>(await Http.GetStringAsync(url), JsonOptions);
             _output.WriteLine($"{site} {query}: {result.Total} hits: {string.Join(", ", result.Hits.Select(h => h.Name))}");
             foreach (var facet in result.Facets)

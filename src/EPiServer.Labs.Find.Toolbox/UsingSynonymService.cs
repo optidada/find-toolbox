@@ -66,7 +66,8 @@ namespace EPiServer.Labs.Find.Toolbox
 
                 var newQuery = CreateQuery(queryText, queryStringQuery);
                 newQuery.QueriesForMatch = expansion.QueriesForMatch.Take(Math.Max(1, _options.MaxQueriesForMatch)).ToArray();
-                newQuery.IsSingleClause = expansion.HasSynonyms && expansion.ClauseCount == 1;
+                // One top level clause (one word or one synonym group): minimum_should_match has nothing to count
+                newQuery.IsSingleClause = expansion.ClauseCount == 1;
 
                 ReplaceQuery(context, currentBoolQuery, newQuery);
                 log.Debug("UsingSynonymsImproved: {0}", queryText);

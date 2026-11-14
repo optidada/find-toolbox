@@ -120,6 +120,8 @@ namespace ToolboxTestHarness.ProductDemo
         public bool Relevance { get; set; } = true;
         public bool Fuzzy { get; set; } = true;
         public bool Wildcard { get; set; } = true;
+        /// <summary>Bypass caches (tests).</summary>
+        public bool NoCache { get; set; }
     }
 
     public class ProductHit

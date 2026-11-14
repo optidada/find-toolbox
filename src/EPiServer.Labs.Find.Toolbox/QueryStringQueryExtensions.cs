@@ -45,6 +45,9 @@ namespace EPiServer.Labs.Find.Toolbox
                 QueryHelpers.CopySettings(originalQuery, query);
                 query.MinimumShouldMatch = minMatch;
                 query.DefaultOperator = BooleanOperator.Or;
+                // One term (or one synonym group): nothing to count, and the analyzer may turn the single word into
+                // several tokens (e.g. word + stem) that minimum_should_match would then all require.
+                query.IsSingleClause = query.IsSingleClause || IsSingleTerm(QueryHelpers.GetRawQueryString(originalQuery));
 
                 if (ReferenceEquals(context.RequestBody.Query, currentBoolQuery) && currentBoolQuery.Should.Count > 0)
                 {
@@ -334,6 +337,9 @@ namespace EPiServer.Labs.Find.Toolbox
                 log.Debug("Added wildcard {0} to search", wildcardQueryString);
             });
         }
+
+        private static bool IsSingleTerm(string rawQuery)
+            => !string.IsNullOrWhiteSpace(rawQuery) && !QueryHelpers.HasBooleanOperators(rawQuery) && QueryHelpers.GetQueryPhrases(rawQuery).Length == 1;
 
         private static IEnumerable<string> FuzzyWildcardCandidates(IEnumerable<string> terms, FindToolboxOptions options)
         {

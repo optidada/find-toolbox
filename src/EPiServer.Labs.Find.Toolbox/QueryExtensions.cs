@@ -18,10 +18,10 @@ namespace EPiServer.Labs.Find.Toolbox
         public string MinimumShouldMatch { get; set; }
 
         /// <summary>
-        /// True when the whole query is ONE synonym group, e.g. <c>(find OR (search AND navigation))</c>.
-        /// The query parser unwraps the outer parentheses, which would make minimum_should_match count the
-        /// alternatives (100% => find AND search AND navigation). With a single clause there is nothing to count,
-        /// so minimum_should_match is not sent.
+        /// True when the query has ONE top level clause: one word, or one synonym group such as
+        /// <c>(find OR (search AND navigation))</c>. minimum_should_match is then not sent: there is nothing to count, and
+        /// it would count the wrong things - the alternatives of an unwrapped synonym group (100% => find AND search AND
+        /// navigation), or the tokens the analyzer makes of a single word (automobile => automobile + automobil).
         /// </summary>
         [JsonIgnore]
         public bool IsSingleClause { get; set; }

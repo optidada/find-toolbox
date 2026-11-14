@@ -94,8 +94,10 @@ namespace ToolboxTestHarness
             }
 
             var container = GetOrCreateContainer(TestDataset.ContainerName);
+            var relevanceContainer = GetOrCreateContainer(TestDataset.RelevanceContainerName);
+
             var pages = SeedPages(container, TestDataset.Documents);
-            pages.AddRange(SeedPages(GetOrCreateContainer(TestDataset.RelevanceContainerName), TestDataset.RelevanceDocuments));
+            pages.AddRange(SeedPages(relevanceContainer, TestDataset.RelevanceDocuments));
 
             // Publishing indexes through the event queue; index explicitly so the tests do not race the queue.
 #if NETFRAMEWORK
@@ -109,23 +111,37 @@ namespace ToolboxTestHarness
             return new { container = container.ContentLink.ID, pages = pages.Count, synonyms = TestDataset.Synonyms.Length, site = SiteName };
         }
 
+        /// <summary>
+        /// Idempotent: existing test pages are updated in place (stable content IDs), missing ones are created and
+        /// pages that are no longer in the data set are deleted (also from the index). Recreating pages on every
+        /// run raced with Find's own event indexing queue, which re-added deleted pages later.
+        /// </summary>
         private List<AlloyPage> SeedPages(AlloyContainer container, IEnumerable<TestDataset.TestDocument> documents)
         {
-            // Remove previous test pages (deleting also removes them from the index)
-            foreach (var child in _contentRepository.GetChildren<IContent>(container.ContentLink).ToList())
+            var wanted = documents.ToList();
+            var existing = _contentRepository.GetChildren<AlloyPage>(container.ContentLink, Culture).ToList();
+
+            foreach (var obsolete in _contentRepository.GetChildren<IContent>(container.ContentLink)
+                                                        .Where(c => !(c is AlloyPage page && wanted.Any(d => d.Title == page.Name)))
+                                                        .ToList())
             {
-                _contentRepository.Delete(child.ContentLink, true, AccessLevel.NoAccess);
+                ContentIndexer.Instance.Delete(obsolete);
+                _contentRepository.Delete(obsolete.ContentLink, true, AccessLevel.NoAccess);
             }
 
             var pages = new List<AlloyPage>();
-            foreach (var document in documents)
+            foreach (var document in wanted)
             {
-                var page = _contentRepository.GetDefault<AlloyPage>(container.ContentLink, Culture);
+                var current = existing.FirstOrDefault(p => p.Name == document.Title);
+                var page = current != null
+                    ? (AlloyPage)current.CreateWritableClone()
+                    : _contentRepository.GetDefault<AlloyPage>(container.ContentLink, Culture);
+
                 page.Name = document.Title;
                 page.MetaTitle = document.Key;
                 page.MainBody = new XhtmlString("<p>" + System.Net.WebUtility.HtmlEncode(document.Title) + "</p>");
-                var reference = _contentRepository.Save(page, SaveAction.Publish, AccessLevel.NoAccess);
-                pages.Add(_contentRepository.Get<AlloyPage>(reference, Culture));
+                var reference = _contentRepository.Save(page, SaveAction.Publish | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
+                pages.Add(_contentRepository.Get<AlloyPage>(reference.ToReferenceWithoutVersion(), Culture));
             }
 
             return pages;
@@ -175,17 +191,28 @@ namespace ToolboxTestHarness
         }
 
         /// <summary>Number of seeded test pages that are searchable (no query string involved).</summary>
-        public async Task<int> CountAsync()
+        public async Task<object> CountAsync()
         {
-            var ids = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName }
-                .Select(name => GetOrCreateContainer(name).ContentLink.ID.ToString(CultureInfo.InvariantCulture))
-                .ToList();
-            var search = _client.Search<AlloyPage>(EPiServer.Find.Language.English)
-                                .Filter(x => x.Ancestors().In(ids))
-                                .Filter(x => !x.Name.Match(CacheBuster()))
-                                .Select(x => x.Name)
-                                .Take(0);
-            return (await GetResultAsync(search)).TotalMatching;
+            var containers = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName }.Select(GetOrCreateContainer).ToList();
+            var containerIds = containers.Select(c => c.ContentLink.ID.ToString(CultureInfo.InvariantCulture)).ToList();
+            var currentIds = containers.SelectMany(c => _contentRepository.GetChildren<IContent>(c.ContentLink))
+                                       .Select(c => c.ContentLink.ID)
+                                       .ToList();
+
+            var all = _client.Search<AlloyPage>(EPiServer.Find.Language.English)
+                             .Filter(x => x.Ancestors().In(containerIds))
+                             .Filter(x => !x.Name.Match(CacheBuster()))
+                             .Select(x => x.ContentLink.ID)
+                             .Take(1000);
+            var indexedIds = (await GetResultAsync(all)).ToList();
+
+            // current: seeded pages that are searchable; stale: documents of earlier seeds still in the index
+            return new
+            {
+                current = indexedIds.Distinct().Count(currentIds.Contains),
+                stale = indexedIds.Count(id => !currentIds.Contains(id)),
+                expected = currentIds.Count
+            };
         }
 
         private async Task SeedSynonymsAsync()
@@ -363,6 +390,19 @@ namespace ToolboxTestHarness
             }
 
             return search;
+        }
+
+        /// <summary>
+        /// Runs a CMS UI search provider (e.g. "Find Toolbox - Pages") the way the edit UI does and returns the
+        /// test document keys of the results, in order.
+        /// </summary>
+        public List<string> SearchWithProvider(EPiServer.Shell.Search.ISearchProvider provider, string q)
+        {
+            var keyByTitle = TestDataset.AllDocuments.ToDictionary(d => d.Title, d => d.Key);
+            var results = provider.Search(new EPiServer.Shell.Search.Query(q) { MaxResults = 20 });
+            return results.Select(r => System.Net.WebUtility.HtmlDecode(r.Title))
+                          .Select(title => keyByTitle.TryGetValue(title, out var key) ? key : title)
+                          .ToList();
         }
 
         /// <summary>

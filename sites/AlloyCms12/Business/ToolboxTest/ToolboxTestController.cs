@@ -24,6 +24,25 @@ public class ToolboxTestController : ControllerBase
     [HttpPost("seed")]
     public async Task<IActionResult> Seed([FromQuery] bool resetIndex = false) => _environment.IsDevelopment() ? Ok(await _service.SeedAsync(resetIndex)) : NotFound();
 
+    /// <param name="area">pages | media | blocks</param>
+    [HttpGet("provider")]
+    public IActionResult Provider([FromQuery] string area, [FromQuery] string q, [FromServices] IServiceProvider services)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            return NotFound();
+        }
+
+        EPiServer.Shell.Search.ISearchProvider provider = area switch
+        {
+            "media" => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxMediaSearchProvider>(services),
+            "blocks" => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxBlockSearchProvider>(services),
+            _ => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxPageSearchProvider>(services),
+        };
+
+        return Ok(_service.SearchWithProvider(provider, q));
+    }
+
     [HttpGet("count")]
     public async Task<IActionResult> Count() => _environment.IsDevelopment() ? Ok(await _service.CountAsync()) : NotFound();
 

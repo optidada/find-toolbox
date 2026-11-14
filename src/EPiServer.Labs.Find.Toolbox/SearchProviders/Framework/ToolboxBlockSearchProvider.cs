@@ -1,4 +1,4 @@
-﻿using EPiServer.Core;
+using EPiServer.Core;
 using EPiServer.DataAbstraction;
 using EPiServer.Find;
 using EPiServer.Find.Api.Querying.Queries;
@@ -45,7 +45,7 @@ namespace EPiServer.Labs.Find.Toolbox.SearchProviders
             Validator.ThrowIfNull("SearchProviderFactory.Instance.CultureFilter", FilterFactory.Instance.CultureFilter);
             Validator.ThrowIfNull("SearchProviderFactory.Instance.RootsFilter", FilterFactory.Instance.RootsFilter);
 
-            query.MaxResults = 20;
+            query.MaxResults = ToolboxSearchProviderQuery.MaxResults(query.MaxResults);
 
             ITypeSearch<IContentData> searchQuery = GetFieldQuery(query.SearchQuery, query.MaxResults)
                 .Filter(x => x.MatchTypeHierarchy(typeof(BlockData)));
@@ -62,27 +62,24 @@ namespace EPiServer.Labs.Find.Toolbox.SearchProviders
 
             var cacheSettings = ServiceLocator.Current.GetInstance<IContentCacheKeyCreator>();
 
-            using (var cacheDependancy = new CacheDependency(null, new[] { cacheSettings.RootKeyName }))
-            {
-                var contentLinksWithLanguage = searchQuery
-                    .Select(x =>
+            var hits = searchQuery
+                .Select(x =>
                             new ContentInLanguageReference(
                                 new ContentReference(((IContent)x).ContentLink.ID,
                                                      ((IContent)x).ContentLink.ProviderName),
-                                ((ILocalizable)x).Language.Name))
-                    .StaticallyCacheFor(TimeSpan.FromMinutes(1), cacheDependancy)
-                    .GetResult();
+                                ((ILocalizable)x).Language.Name));
 
-                BlockData content = null;
-                return contentLinksWithLanguage
-                    .Where(
-                        searchResult =>
-                        DataFactory.Instance.TryGet<BlockData>(searchResult.ContentLink,
-                                                               !String.IsNullOrEmpty(searchResult.Language)
-                                                                   ? new LanguageSelector(searchResult.Language)
-                                                                   : LanguageSelector.AutoDetect(true), out content))
-                    .Select(item => CreateSearchResult(content));
+            var cacheDuration = FindToolboxOptions.Current.SearchProviderCacheDuration;
+            if (cacheDuration > TimeSpan.Zero)
+            {
+                hits = hits.StaticallyCacheFor(cacheDuration, new CacheDependency(null, new[] { cacheSettings.RootKeyName }));
             }
+
+            var contentLinksWithLanguage = hits.GetResult();
+
+            return ToolboxSearchProviderQuery.Load<BlockData>(ServiceLocator.Current.GetInstance<IContentLoader>(), contentLinksWithLanguage)
+                .Select(content => CreateSearchResult(content))
+                .ToList();
         }
 
         private new ITypeSearch<IContentData> GetFieldQuery(string SearchQuery, int maxResults)
@@ -95,15 +92,9 @@ namespace EPiServer.Labs.Find.Toolbox.SearchProviders
             }
 
             var query = SearchClient.Instance.Search<IContentData>(language)
-                .For(SearchQuery)
-                .InField(x => ((IContent)x).Name, 10)
-                .InField(x => ((IContent)x).ContentTypeName(), 2)
-                .InField(x => x.SearchText());
+                .For(SearchQuery);
 
-            if (int.TryParse(SearchQuery, out int parsedQuery))
-            {
-                query = query.InField(x => ((IContent)x).ContentLink.ID, 10);
-            }
+            query = ToolboxSearchProviderQuery.Fields(query, SearchQuery);
 
             query = AddContentSpecificFields(query);
             query = AddFindToolboxQueries(query);
@@ -151,14 +142,7 @@ namespace EPiServer.Labs.Find.Toolbox.SearchProviders
 
         private IQueriedSearch<IContentData, QueryStringQuery> AddFindToolboxQueries(IQueriedSearch<IContentData, QueryStringQuery> query)
         {
-            query = query
-                    .MinimumShouldMatch("1")
-                    .UsingSynonymsImproved()
-                    .UsingRelevanceImproved(x => ((IContent)x).Name, x => x.SearchText(), x => ((IContent)x).ContentTypeName())
-                    .WildcardMatch(x => ((IContent)x).Name, x => ((IContent)x).ContentTypeName())
-                    .FuzzyMatch(x => ((IContent)x).Name, x => ((IContent)x).ContentTypeName());                   
-
-            return query;
+            return ToolboxSearchProviderQuery.Toolbox(query);
         }
 
     }

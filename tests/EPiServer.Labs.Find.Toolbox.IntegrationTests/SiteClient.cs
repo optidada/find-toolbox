@@ -65,9 +65,11 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             var stable = 0;
             while (true)
             {
-                var count = int.Parse(await Http.GetStringAsync(new Uri(_baseUri, "toolbox-test/count")));
-                stable = count == expected ? stable + 1 : 0;
-                if (stable >= 3)
+                // Ready when every seeded page is searchable and no document of an earlier seed is left
+                var status = JsonSerializer.Deserialize<IndexStatus>(await Http.GetStringAsync(new Uri(_baseUri, "toolbox-test/count")), JsonOptions);
+                var count = $"{status.Current} current, {status.Stale} stale";
+                stable = status.Current == expected && status.Stale == 0 ? stable + 1 : 0;
+                if (stable >= 2)
                 {
                     return;
                 }
@@ -79,6 +81,12 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
 
                 await Task.Delay(1000);
             }
+        }
+
+        private sealed class IndexStatus
+        {
+            public int Current { get; set; }
+            public int Stale { get; set; }
         }
 
         public async Task<ToolboxSearchResponse> SearchAsync(IDictionary<string, string> parameters)

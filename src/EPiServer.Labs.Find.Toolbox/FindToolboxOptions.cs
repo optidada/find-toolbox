@@ -95,6 +95,20 @@ namespace EPiServer.Labs.Find.Toolbox
         /// <summary>Number of leading characters that must match exactly in fuzzy matching.</summary>
         public int FuzzyPrefixLength { get; set; } = 3;
 
+        // ---- CMS UI search providers (Find Toolbox - Pages / Media / Blocks)
+
+        /// <summary>MinimumShouldMatch used by the CMS UI search providers. Null or empty = not used (default operator OR).</summary>
+        public string SearchProviderMinimumShouldMatch { get; set; } = "1";
+
+        /// <summary>
+        /// How long CMS UI search provider results are cached. Default: not cached, so editors immediately find
+        /// content they just created (the cache was not reliably invalidated on content changes).
+        /// </summary>
+        public TimeSpan SearchProviderCacheDuration { get; set; } = TimeSpan.Zero;
+
+        /// <summary>Max hits returned by the CMS UI search providers.</summary>
+        public int SearchProviderMaxResults { get; set; } = 20;
+
         private static FindToolboxOptions _override;
 
         /// <summary>

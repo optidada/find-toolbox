@@ -11,6 +11,11 @@ using System;
 namespace EPiServer.Labs.Find.Toolbox
 {
 
+#if NETFRAMEWORK
+    /// <summary>
+    /// SetTimeout for Find 13 (CMS 11). Find 17 (CMS 12) has its own SetTimeout extension; a second one here would make
+    /// every call ambiguous, so on CMS 12 Find's built-in method is used.
+    /// </summary>
     public static class SearchExtensions
     {
         // Note: the timeout is in MILLISECONDS (the parameter used to be misnamed durationInSeconds).
@@ -61,5 +66,5 @@ namespace EPiServer.Labs.Find.Toolbox
         }
 
     }
+#endif
 }
-

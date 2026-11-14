@@ -43,6 +43,10 @@ public class ToolboxTestController : ControllerBase
         return Ok(_service.SearchWithProvider(provider, q));
     }
 
+    /// <summary>Indexes all site content (the Alloy demo pages) so the search page has content.</summary>
+    [HttpPost("index-site")]
+    public async Task<IActionResult> IndexSite() => _environment.IsDevelopment() ? Ok(await _service.IndexSiteAsync()) : NotFound();
+
     [HttpGet("count")]
     public async Task<IActionResult> Count() => _environment.IsDevelopment() ? Ok(await _service.CountAsync()) : NotFound();
 

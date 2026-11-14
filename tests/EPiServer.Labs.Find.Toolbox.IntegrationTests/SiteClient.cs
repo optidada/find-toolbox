@@ -47,14 +47,32 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             }
 
             var client = new SiteClient(site, new Uri(url.TrimEnd('/') + "/"));
-            await Seeded.GetOrAdd(site, _ => new Lazy<Task>(client.SeedAndWaitAsync)).Value;
+            await Seeded.GetOrAdd(site, _ => new Lazy<Task>(() => client.SeedSerializedAsync())).Value;
             return client;
+        }
+
+        // The sites may share one Find index: seed one site at a time and reset the index at most once per run
+        private static readonly SemaphoreSlim SeedLock = new SemaphoreSlim(1, 1);
+        private static bool _resetDone;
+
+        private async Task SeedSerializedAsync()
+        {
+            await SeedLock.WaitAsync();
+            try
+            {
+                await SeedAndWaitAsync();
+            }
+            finally
+            {
+                SeedLock.Release();
+            }
         }
 
         private async Task SeedAndWaitAsync()
         {
             // TOOLBOX_RESET_INDEX=true wipes ALL documents and synonyms in the site's index before seeding
-            var reset = string.Equals(Environment.GetEnvironmentVariable("TOOLBOX_RESET_INDEX"), "true", StringComparison.OrdinalIgnoreCase);
+            var reset = !_resetDone && string.Equals(Environment.GetEnvironmentVariable("TOOLBOX_RESET_INDEX"), "true", StringComparison.OrdinalIgnoreCase);
+            _resetDone = true;
             var response = await Http.PostAsync(new Uri(_baseUri, "toolbox-test/seed?resetIndex=" + reset.ToString().ToLowerInvariant()), null);
             response.EnsureSuccessStatusCode();
 

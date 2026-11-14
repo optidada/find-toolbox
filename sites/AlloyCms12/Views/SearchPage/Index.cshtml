@@ -42,7 +42,7 @@
             @foreach (var hit in Model.Hits)
             {
                 <div class="listResult">
-                    <h3><a href="@hit.Url">@hit.Title</a></h3>
+                    <h3><a href="@hit.Url">@hit.Title</a> <small style="color:#999">score @hit.Score.ToString("0.000")</small></h3>
                     <p>@hit.Excerpt</p>
                     <hr />
                 </div>
@@ -50,6 +50,27 @@
         </div>
     </div>
 
+}
+
+@if (!string.IsNullOrEmpty(Model.ToolboxChain))
+{
+    <div class="row">
+        <div class="span8">
+            <h3>Find Toolbox</h3>
+            <p>
+                Try:
+                @foreach (var link in Model.Switches)
+                {
+                    <a href="@link.Value" style="margin-right:12px">@link.Key</a>
+                }
+            </p>
+            <pre style="font-size:12px">@Model.ToolboxChain</pre>
+            <details>
+                <summary>Query sent to Find</summary>
+                <pre style="font-size:11px">@Model.QueryJson</pre>
+            </details>
+        </div>
+    </div>
 }
 
 @if (Model.SearchServiceDisabled && Html.ViewContext.IsInEditMode())

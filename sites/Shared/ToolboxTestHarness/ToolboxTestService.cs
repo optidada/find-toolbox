@@ -221,7 +221,17 @@ namespace ToolboxTestHarness
 
             var existing = await ListSynonymsAsync(1000, tags);
             var testPhrases = new HashSet<string>(TestDataset.Synonyms.Select(s => s.Phrase), StringComparer.OrdinalIgnoreCase);
-            foreach (var synonym in existing.Where(s => testPhrases.Contains(s.Phrase)))
+            var current = existing.Where(s => testPhrases.Contains(s.Phrase)).ToList();
+
+            // Idempotent: both test sites share the index, so do not touch the synonyms when they are already right
+            // (deleting and re-adding them would briefly remove them while the other site's tests run).
+            bool Same(Synonym s, TestDataset.TestSynonym t) => s.Phrase == t.Phrase && s.SynonymPhrase == t.Synonym && s.Bidirectional == t.Bidirectional;
+            if (current.Count == TestDataset.Synonyms.Length && TestDataset.Synonyms.All(t => current.Any(s => Same(s, t))))
+            {
+                return;
+            }
+
+            foreach (var synonym in current)
             {
                 await DeleteSynonymAsync(synonym.Id);
             }
@@ -316,6 +326,8 @@ namespace ToolboxTestHarness
                 // The way the README uses the toolbox: UnifiedSearch + SearchTitle
                 var search = ApplyToolbox(_client.UnifiedSearch(EPiServer.Find.Language.English).For(request.Q ?? string.Empty), request, x => x.SearchTitle, x => x.SearchText)
                     .Filter(x => ((IContent)x).Ancestors().Match(containerId))
+                    // Both test sites may share an index: only this site's page type (content IDs can coincide)
+                    .Filter(x => x.MatchTypeHierarchy(typeof(AlloyPage)))
                     .Filter(x => !x.SearchTitle.Match(CacheBuster()))
                     .Take(100);
                 var result = await GetUnifiedResultAsync(search);
@@ -392,6 +404,26 @@ namespace ToolboxTestHarness
             return search;
         }
 
+        /// <summary>Indexes all site content (e.g. the Alloy demo pages) so the site's search page has something to find.</summary>
+        public async Task<object> IndexSiteAsync()
+        {
+            var content = _contentRepository.GetDescendents(ContentReference.RootPage)
+                .Select(reference => _contentRepository.TryGet(reference, out IContent item) ? item : null)
+                .Where(item => item != null)
+                .ToList();
+
+            foreach (var batch in content.Select((item, i) => new { item, i }).GroupBy(x => x.i / 100, x => x.item))
+            {
+#if NETFRAMEWORK
+                ContentIndexer.Instance.Index(batch);
+#else
+                await ContentIndexer.Instance.IndexAsync(batch);
+#endif
+            }
+
+            return new { indexed = content.Count, site = SiteName };
+        }
+
         /// <summary>
         /// Runs a CMS UI search provider (e.g. "Find Toolbox - Pages") the way the edit UI does and returns the
         /// test document keys of the results, in order.
@@ -399,7 +431,11 @@ namespace ToolboxTestHarness
         public List<string> SearchWithProvider(EPiServer.Shell.Search.ISearchProvider provider, string q)
         {
             var keyByTitle = TestDataset.AllDocuments.ToDictionary(d => d.Title, d => d.Key);
-            var results = provider.Search(new EPiServer.Shell.Search.Query(q) { MaxResults = 20 });
+            // Search roots = the test containers, like the edit UI passes roots (both test sites may share an index)
+            var roots = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName }
+                .Select(name => GetOrCreateContainer(name).ContentLink.ID.ToString(CultureInfo.InvariantCulture))
+                .ToList();
+            var results = provider.Search(new EPiServer.Shell.Search.Query(q) { MaxResults = 20, SearchRoots = roots });
             return results.Select(r => System.Net.WebUtility.HtmlDecode(r.Title))
                           .Select(title => keyByTitle.TryGetValue(title, out var key) ? key : title)
                           .ToList();

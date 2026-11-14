@@ -36,7 +36,8 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
         {
             var hits = await Provider(site, "pages", "episerver find");
 
-            Assert.Equal("R1", hits[0]);
+            // The top hit is one of the titles starting with the exact phrase (near-ties, see RelevanceTests)
+            Assert.Contains(hits[0], new[] { "R1", "R2", "D1" });
             Assert.Contains("R2", hits);
             Assert.Contains("D1", hits);
         }

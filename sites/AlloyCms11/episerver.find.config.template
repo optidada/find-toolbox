@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copy to episerver.find.config (git-ignored) and fill in your Search & Navigation index. -->
+<episerver.find serviceUrl="https://service.find.episerver.net/YOUR-KEY/" defaultIndex="your_index" />

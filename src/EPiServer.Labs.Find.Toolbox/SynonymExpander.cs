@@ -10,8 +10,9 @@ namespace EPiServer.Labs.Find.Toolbox
     /// </summary>
     public sealed class SynonymExpansion
     {
-        internal SynonymExpansion(string[] terms, string expandedQuery, bool hasSynonyms, IReadOnlyList<string> queriesForMatch)
+        internal SynonymExpansion(string[] terms, string expandedQuery, bool hasSynonyms, IReadOnlyList<string> queriesForMatch, int clauseCount)
         {
+            ClauseCount = clauseCount;
             Terms = terms;
             ExpandedQuery = expandedQuery;
             HasSynonyms = hasSynonyms;
@@ -28,6 +29,9 @@ namespace EPiServer.Labs.Find.Toolbox
         /// count a term and all of its synonyms as one "term".
         /// </summary>
         public string ExpandedQuery { get; }
+
+        /// <summary>Number of top level clauses in <see cref="ExpandedQuery"/> (a synonym group counts as one).</summary>
+        public int ClauseCount { get; }
 
         /// <summary>True if at least one synonym matched.</summary>
         public bool HasSynonyms { get; }
@@ -98,7 +102,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 }
             }
 
-            return new SynonymExpansion(terms, string.Join(" ", parts), hasSynonyms, queriesForMatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+            return new SynonymExpansion(terms, string.Join(" ", parts), hasSynonyms, queriesForMatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), parts.Count);
         }
 
         private static bool TryGetSynonyms(IDictionary<string, HashSet<string>> synonyms, string phrase, out HashSet<string> matchingSynonyms)

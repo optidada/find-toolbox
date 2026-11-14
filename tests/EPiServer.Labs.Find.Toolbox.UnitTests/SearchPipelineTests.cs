@@ -41,6 +41,31 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
             Assert.Equal("100%", (string)single["minimum_should_match"]);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Single_synonym_group_does_not_send_msm(bool msmAfterSynonyms)
+        {
+            // Found against a live index: the parser unwraps "(find OR (search AND navigation))" so 100%
+            // would require find AND search AND navigation.
+            var search = msmAfterSynonyms
+                ? For("find").UsingSynonymsImproved(FindSynonym).MinimumShouldMatch("100%")
+                : For("find").MinimumShouldMatch("100%").UsingSynonymsImproved(FindSynonym);
+
+            var single = Assert.Single(QueryStrings(QueryJson(search)));
+            Assert.Equal("(find OR (search AND navigation))", (string)single["query"]);
+            Assert.Null(single["minimum_should_match"]);
+        }
+
+        [Fact]
+        public void Single_synonym_group_still_passes_msm_on_to_FuzzyMatch()
+        {
+            var search = For("find").MinimumShouldMatch("100%").UsingSynonymsImproved(FindSynonym).FuzzyMatch(x => x.Title);
+
+            var fuzzy = QueryStrings(QueryJson(search)).Single(q => ((string)q["query"]).Contains("~"));
+            Assert.Equal("100%", (string)fuzzy["minimum_should_match"]);
+        }
+
         [Fact]
         public void And_operator_with_synonyms_stays_AND()
         {

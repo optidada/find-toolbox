@@ -6,6 +6,6 @@ obj
 # Optimizely packages copy their UI zips into the project
 **/modules/_protected/
 # Local site data / secrets
-**/App_Data/
-appsettings.Development.json
+**/App_Data/*
+!sites/AlloyCms12/App_Data/DefaultSiteContent.episerverdata
 *.user

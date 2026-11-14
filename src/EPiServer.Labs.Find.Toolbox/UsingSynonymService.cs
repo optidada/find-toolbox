@@ -1,4 +1,4 @@
-﻿using EPiServer.Find;
+using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Helpers.Text;
@@ -57,6 +57,7 @@ namespace EPiServer.Labs.Find.Toolbox
 
                 var newQuery = CreateQuery(queryText, queryStringQuery);
                 newQuery.QueriesForMatch = expansion.QueriesForMatch.Take(3).ToArray();
+                newQuery.IsSingleClause = expansion.HasSynonyms && expansion.ClauseCount == 1;
 
                 ReplaceQuery(context, currentBoolQuery, newQuery);
                 log.Debug("UsingSynonymsImproved: {0}", queryText);

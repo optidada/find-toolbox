@@ -1,4 +1,4 @@
-﻿using EPiServer.Find.Api.Querying;
+using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Helpers;
 using EPiServer.Find.Json;
@@ -13,8 +13,21 @@ namespace EPiServer.Labs.Find.Toolbox
         {
         }
 
-        [JsonProperty("minimum_should_match", NullValueHandling = NullValueHandling.Ignore)]
+        /// <summary>The requested minimum_should_match (inherited by FuzzyMatch/WildcardMatch).</summary>
+        [JsonIgnore]
         public string MinimumShouldMatch { get; set; }
+
+        /// <summary>
+        /// True when the whole query is ONE synonym group, e.g. <c>(find OR (search AND navigation))</c>.
+        /// The query parser unwraps the outer parentheses, which would make minimum_should_match count the
+        /// alternatives (100% => find AND search AND navigation). With a single clause there is nothing to count,
+        /// so minimum_should_match is not sent.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsSingleClause { get; set; }
+
+        [JsonProperty("minimum_should_match", NullValueHandling = NullValueHandling.Ignore)]
+        public string MinimumShouldMatchForRequest => IsSingleClause ? null : MinimumShouldMatch;
 
         [JsonProperty("lenient", NullValueHandling = NullValueHandling.Ignore)]
         public bool Lenient { get; set; } = true;

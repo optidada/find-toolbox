@@ -35,9 +35,9 @@ namespace EPiServer.Labs.Find.Toolbox
             return usingSynonymService.UsingSynonyms(search, cacheDuration);
         }
 
-        public static IQueriedSearch<TSource, MinShouldMatchQueryStringQuery> MinimumShouldMatch<TSource>(this IQueriedSearch<TSource> search, string minMatch)
+        public static IQueriedSearch<TSource, QueryStringQuery> MinimumShouldMatch<TSource>(this IQueriedSearch<TSource> search, string minMatch)
         {
-            return new Search<TSource, MinShouldMatchQueryStringQuery>(search, context =>
+            return new Search<TSource, QueryStringQuery>(search, context =>
             {
                 if (!QueryHelpers.GetFirstQueryStringQuery(context, out IQuery currentQuery, out BoolQuery currentBoolQuery))
                 {

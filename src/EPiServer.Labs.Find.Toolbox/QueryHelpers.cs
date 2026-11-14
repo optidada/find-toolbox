@@ -95,6 +95,7 @@ namespace EPiServer.Labs.Find.Toolbox
             if (source is MinShouldMatchQueryStringQuery sourceMsm && target is MinShouldMatchQueryStringQuery targetMsm)
             {
                 targetMsm.MinimumShouldMatch = sourceMsm.MinimumShouldMatch;
+                targetMsm.IsSingleClause = sourceMsm.IsSingleClause;
                 targetMsm.Lenient = sourceMsm.Lenient;
                 targetMsm.QueriesForMatch = sourceMsm.QueriesForMatch;
             }

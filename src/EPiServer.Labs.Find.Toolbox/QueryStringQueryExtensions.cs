@@ -71,6 +71,12 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
+                // AND / OR / NOT: optional clauses could match documents the operators exclude
+                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                {
+                    return;
+                }
+
                 // Keep the current bool query with current queries if it exists
                 if (currentBoolQuery.Should.Count > 0)
                 {
@@ -180,6 +186,12 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
+                // AND / OR / NOT: optional clauses could match documents the operators exclude
+                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                {
+                    return;
+                }
+
                 // Keep the current bool query with current queries if it exists
                 if (currentBoolQuery.Should.Count > 0)
                 {
@@ -256,6 +268,12 @@ namespace EPiServer.Labs.Find.Toolbox
                 {
                     // Synonyms are only supported for QueryStringQuery
                     Trace.Instance.Add(new TraceEvent(search, "The use of synonyms are only supported för QueryStringQueries, i.e. with the use of the .For() -extensions. The query will be executed without the use of synonyms.") { IsError = false });
+                    return;
+                }
+
+                // AND / OR / NOT: optional clauses could match documents the operators exclude
+                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                {
                     return;
                 }
 

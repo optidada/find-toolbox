@@ -161,6 +161,16 @@ Sets the request timeout, in **milliseconds**:
 - **CMS 12 / Find 17:** Find has its own `SetTimeout`, so the toolbox does not add one (two would make every call
   ambiguous). The same code compiles against both.
 
+### Query syntax
+
+Find's `.For()` escapes almost all query syntax, so `-`, `+`, `*`, `~`, `:`, parentheses etc. are literal characters
+(`e-mail`, `c++`, `covid-19` and `cats -dogs` are just words). Real syntax is limited to:
+
+- **Quoted phrases** (`"new york" pizza`): kept, and phrases can have synonyms too.
+- **Upper case `AND`, `OR`, `NOT`** (outside quotes): the toolbox leaves such queries exactly as Find interprets
+  them, without synonyms, relevance, fuzzy or wildcard clauses. Rewriting would drop the operators, and the extra
+  optional clauses could match documents that `NOT` excludes.
+
 ---
 
 ## Call order

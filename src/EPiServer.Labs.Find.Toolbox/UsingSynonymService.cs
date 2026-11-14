@@ -45,6 +45,13 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
+                // AND / OR / NOT: leave the query exactly as Find interprets it
+                if (QueryHelpers.HasBooleanOperators(rawQuery))
+                {
+                    log.Debug("UsingSynonymsImproved: query uses boolean operators, not expanded: {0}", rawQuery);
+                    return;
+                }
+
                 var terms = QueryHelpers.GetQueryPhrases(rawQuery, _options.MaxQueryTerms);
                 if (terms.Length == 0)
                 {

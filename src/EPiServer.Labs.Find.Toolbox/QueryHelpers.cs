@@ -19,6 +19,26 @@ namespace EPiServer.Labs.Find.Toolbox
 
         public static string[] GetQueryPhrases(string query) => GetQueryPhrases(query, FindToolboxOptions.Current.MaxQueryTerms);
 
+        private static readonly Regex QuotedPhraseRegex = new Regex(@"""[^""]*""", RegexOptions.Compiled);
+        private static readonly Regex BooleanOperatorRegex = new Regex(@"(^|\s)(AND|OR|NOT)(\s|$)", RegexOptions.Compiled);
+
+        /// <summary>
+        /// True if the query uses boolean operators: a standalone, upper case AND, OR or NOT outside quotes.
+        /// Find's For() escapes all other query syntax (-, +, *, ~, :, parentheses...), so hyphens and pluses
+        /// inside or in front of words (e-mail, c++, -dogs) are never operators. Queries with operators are left
+        /// exactly as Find interprets them (no synonyms, relevance, fuzzy or wildcard clauses), because rewriting
+        /// them would drop the operators and the optional clauses could match excluded documents.
+        /// </summary>
+        public static bool HasBooleanOperators(string query)
+        {
+            if (string.IsNullOrEmpty(query))
+            {
+                return false;
+            }
+
+            return BooleanOperatorRegex.IsMatch(QuotedPhraseRegex.Replace(query, " "));
+        }
+
         public static string[] GetQueryPhrases(string query, int maxTerms)
         {
             if (string.IsNullOrWhiteSpace(query))

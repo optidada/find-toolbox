@@ -135,7 +135,8 @@ Remaining misses: a typo in a word that has synonyms only finds the documents wi
 (`televisoin` finds the "TV"s but not the "Television"s), fuzzy and wildcard do not combine with synonyms; and words
 written apart (`note book`) do not find compounds (`notebook`) unless the language analyzer decompounds.
 
-Run it yourself: `python scratch/evaluate.py`-style comparisons are easy with `/toolbox-test/products?q=...&engine=find|find-and|toolbox`.
+Reproduce: start the test sites and run `python tests/evaluation/evaluate_product_search.py`, or compare single
+queries with `/toolbox-test/products?q=...&engine=find|find-and|toolbox`.
 
 ### MinimumShouldMatch()
 

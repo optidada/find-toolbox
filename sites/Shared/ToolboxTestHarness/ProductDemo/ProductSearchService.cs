@@ -38,10 +38,11 @@ namespace ToolboxTestHarness.ProductDemo
         private static CultureInfo Culture => CultureInfo.GetCultureInfo(TestDataset.Language);
 
         /// <summary>Idempotent: products are updated in place (stable IDs); returns the pages to index.</summary>
-        public List<DemoProductPage> SeedProducts(ContentReference container)
+        public List<DemoProductPage> SeedProducts(ContentReference container) => SeedProducts(container, ProductDataset.Products, Culture);
+
+        public List<DemoProductPage> SeedProducts(ContentReference container, ProductDataset.Product[] wanted, CultureInfo culture)
         {
-            var existing = _contentRepository.GetChildren<DemoProductPage>(container, Culture).ToList();
-            var wanted = ProductDataset.Products;
+            var existing = _contentRepository.GetChildren<DemoProductPage>(container, culture).ToList();
 
             foreach (var obsolete in _contentRepository.GetChildren<IContent>(container)
                                                         .Where(c => !(c is DemoProductPage p && wanted.Any(w => w.Name == p.Name)))
@@ -57,7 +58,7 @@ namespace ToolboxTestHarness.ProductDemo
                 var current = existing.FirstOrDefault(p => p.Name == product.Name);
                 var page = current != null
                     ? (DemoProductPage)current.CreateWritableClone()
-                    : _contentRepository.GetDefault<DemoProductPage>(container, Culture);
+                    : _contentRepository.GetDefault<DemoProductPage>(container, culture);
 
                 page.Name = product.Name;
                 page.ProductCategory = product.Category;
@@ -67,7 +68,7 @@ namespace ToolboxTestHarness.ProductDemo
                 page.Description = product.Description;
 
                 var reference = _contentRepository.Save(page, SaveAction.Publish | SaveAction.ForceCurrentVersion, AccessLevel.NoAccess);
-                pages.Add(_contentRepository.Get<DemoProductPage>(reference.ToReferenceWithoutVersion(), Culture));
+                pages.Add(_contentRepository.Get<DemoProductPage>(reference.ToReferenceWithoutVersion(), culture));
             }
 
             return pages;
@@ -80,9 +81,9 @@ namespace ToolboxTestHarness.ProductDemo
         ///   value is counted with a FilterFacet of "the other facets' selections AND this value", all in one request.
         ///   Which values a facet has comes from the terms facets of the query alone, cached for a minute.
         /// </summary>
-        public async Task<ProductSearchResult> SearchAsync(ProductSearchRequest request, ContentReference container)
+        public async Task<ProductSearchResult> SearchAsync(ProductSearchRequest request, params ContentReference[] containers)
         {
-            var containerId = container.ID.ToString(CultureInfo.InvariantCulture);
+            var containerId = containers.Select(c => c.ID.ToString(CultureInfo.InvariantCulture)).ToList();
             var chain = new List<string>();
             var baseSearch = BaseSearch(request, containerId, chain);
             var anySelected = request.Category.Count + request.Brand.Count + request.Color.Count + request.Price.Count > 0;
@@ -228,7 +229,7 @@ namespace ToolboxTestHarness.ProductDemo
 #endif
 
         /// <summary>The query (with the toolbox) and the container filter, without facet filters.</summary>
-        private ITypeSearch<DemoProductPage> BaseSearch(ProductSearchRequest request, string containerId, List<string> chain)
+        private ITypeSearch<DemoProductPage> BaseSearch(ProductSearchRequest request, List<string> containerId, List<string> chain)
         {
             var language = request.Lang == "sv" ? EPiServer.Find.Language.Swedish
                          : request.Lang == "none" ? EPiServer.Find.Language.None
@@ -316,9 +317,9 @@ namespace ToolboxTestHarness.ProductDemo
             return counts;
         }
 
-        private static ITypeSearch<DemoProductPage> Scope(ITypeSearch<DemoProductPage> search, ProductSearchRequest request, string containerId)
+        private static ITypeSearch<DemoProductPage> Scope(ITypeSearch<DemoProductPage> search, ProductSearchRequest request, List<string> containerIds)
         {
-            search = search.Filter(x => x.Ancestors().Match(containerId));
+            search = search.Filter(x => x.Ancestors().In(containerIds));
 
             // Tests need the index as it is right now: the Find service sits behind a CDN, so make the request unique
             return request.NoCache ? search.Filter(x => !x.Name.Match("nocache-" + Guid.NewGuid().ToString("N"))) : search;

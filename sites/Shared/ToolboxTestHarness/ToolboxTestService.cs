@@ -101,6 +101,9 @@ namespace ToolboxTestHarness
             var pages = SeedPages(container, TestDataset.Documents);
             pages.AddRange(SeedPages(relevanceContainer, TestDataset.RelevanceDocuments));
             var products = Products.SeedProducts(GetOrCreateContainer(ProductDataset.ContainerName).ContentLink);
+            EnsureLanguageEnabled(ProductDataset.SwedishLanguage);
+            products.AddRange(Products.SeedProducts(GetOrCreateContainer(ProductDataset.SwedishContainerName).ContentLink,
+                ProductDataset.SwedishProducts, CultureInfo.GetCultureInfo(ProductDataset.SwedishLanguage)));
 
             // Publishing indexes through the event queue; index explicitly so the tests do not race the queue.
 #if NETFRAMEWORK
@@ -198,9 +201,11 @@ namespace ToolboxTestHarness
         /// <summary>Number of seeded test pages that are searchable (no query string involved).</summary>
         public async Task<object> CountAsync()
         {
-            var containers = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName, ProductDataset.ContainerName }.Select(GetOrCreateContainer).ToList();
+            var containers = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName, ProductDataset.ContainerName, ProductDataset.SwedishContainerName }.Select(GetOrCreateContainer).ToList();
             var containerIds = containers.Select(c => c.ContentLink.ID.ToString(CultureInfo.InvariantCulture)).ToList();
-            var currentIds = containers.SelectMany(c => _contentRepository.GetChildren<IContent>(c.ContentLink))
+            // Master language: also the Swedish-only demo products
+            var masterLanguage = new LoaderOptions { LanguageLoaderOption.MasterLanguage() };
+            var currentIds = containers.SelectMany(c => _contentRepository.GetChildren<IContent>(c.ContentLink, masterLanguage))
                                        .Select(c => c.ContentLink.ID)
                                        .ToList();
 
@@ -422,7 +427,28 @@ namespace ToolboxTestHarness
 
         /// <summary>Faceted product search (/product-demo and /toolbox-test/products).</summary>
         public Task<ProductSearchResult> ProductSearchAsync(ProductSearchRequest request)
-            => Products.SearchAsync(request, GetOrCreateContainer(ProductDataset.ContainerName).ContentLink);
+            => Products.SearchAsync(request,
+                GetOrCreateContainer(ProductDataset.ContainerName).ContentLink,
+                GetOrCreateContainer(ProductDataset.SwedishContainerName).ContentLink);
+
+        /// <summary>The Swedish demo products need Swedish enabled on the site (Alloy has it, but make sure).</summary>
+        private static void EnsureLanguageEnabled(string language)
+        {
+            var repository = (EPiServer.DataAbstraction.ILanguageBranchRepository)EPiServer.ServiceLocation.ServiceLocator.Current
+                .GetService(typeof(EPiServer.DataAbstraction.ILanguageBranchRepository));
+            var culture = CultureInfo.GetCultureInfo(language);
+            var branch = repository.Load(culture);
+            if (branch == null)
+            {
+                repository.Save(new EPiServer.DataAbstraction.LanguageBranch(culture) { Enabled = true });
+            }
+            else if (!branch.Enabled)
+            {
+                var writable = branch.CreateWritableClone();
+                writable.Enabled = true;
+                repository.Save(writable);
+            }
+        }
 
         /// <summary>Indexes all site content (e.g. the Alloy demo pages) so the site's search page has something to find.</summary>
         public async Task<object> IndexSiteAsync()

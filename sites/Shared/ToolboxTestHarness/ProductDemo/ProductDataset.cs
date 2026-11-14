@@ -11,6 +11,10 @@ namespace ToolboxTestHarness.ProductDemo
     {
         public const string ContainerName = "Toolbox product demo";
 
+        /// <summary>Swedish products (Swedish language pages, indexed into the .sv fields).</summary>
+        public const string SwedishContainerName = "Toolbox product demo (sv)";
+        public const string SwedishLanguage = "sv";
+
         public class Product
         {
             public Product(string name, string category, string brand, string color, double price, string description)
@@ -91,6 +95,26 @@ namespace ToolboxTestHarness.ProductDemo
             new Product("Contoso Compact Camera", "Cameras", "Contoso", "Silver", 449, "Pocket sized compact camera with zoom."),
             new Product("Fabrikam Vlogging Camera", "Cameras", "Fabrikam", "White", 699, "Camera with flip screen for vlogging."),
             new Product("Northwind 360 Camera", "Cameras", "Northwind", "Silver", 399, "360 degree camera for virtual tours."),
+        };
+
+        /// <summary>
+        /// Swedish products with compound words. Find's Swedish analyzer decompounds at index time (the .sv fields), so
+        /// searching for a part of the compound ("kopp", "maskin") can find the compound ("Kaffekopp", "Diskmaskin").
+        /// </summary>
+        public static readonly Product[] SwedishProducts =
+        {
+            new Product("Kaffekopp i porslin", "Kök", "Contoso", "White", 99, "Klassisk kaffekopp som tål diskmaskin."),
+            new Product("Kaffebryggare Deluxe", "Kök", "Fabrikam", "Black", 899, "Kaffebryggare med termoskanna och timer."),
+            new Product("Tekopp med fat", "Kök", "Northwind", "Blue", 79, "Tekopp i stengods med matchande fat."),
+            new Product("Vattenkokare i stål", "Kök", "Litware", "Silver", 349, "Snabb vattenkokare med automatisk avstängning."),
+            new Product("Datorväska 15 tum", "Datortillbehör", "Tailspin", "Black", 499, "Vadderad datorväska med axelrem."),
+            new Product("Bärbar dator 14 tum", "Datorer", "Contoso", "Silver", 8999, "Lätt bärbar dator för studier och arbete."),
+            new Product("Trådlösa hörlurar", "Ljud", "Fabrikam", "Black", 1299, "Hörlurar med brusreducering."),
+            new Product("Mobilskal i läder", "Mobiltillbehör", "Northwind", "Red", 249, "Skal som skyddar mobilen."),
+            new Product("Barnkamera vattentät", "Kameror", "Tailspin", "Blue", 599, "Tålig kamera för barn."),
+            new Product("Tvättmaskin 8 kg", "Vitvaror", "Litware", "White", 6999, "Energisnål tvättmaskin med ångprogram."),
+            new Product("Diskmaskin integrerad", "Vitvaror", "Contoso", "White", 5999, "Tyst diskmaskin för inbyggnad."),
+            new Product("Skrivbordslampa LED", "Belysning", "Fabrikam", "Black", 399, "Dimbar skrivbordslampa med USB-laddning."),
         };
 
         /// <summary>Synonyms used by the product demo (seeded together with the test synonyms).</summary>

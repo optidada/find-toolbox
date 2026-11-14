@@ -138,6 +138,26 @@ written apart (`note book`) do not find compounds (`notebook`) unless the langua
 Reproduce: start the test sites and run `python tests/evaluation/evaluate_product_search.py`, or compare single
 queries with `/toolbox-test/products?q=...&engine=find|find-and|toolbox`.
 
+### Search with the content's language: stemming and decompounding
+
+Search & Navigation indexes every text field also into a language specific field (`Name$$string.sv`, `.en`, ...)
+whose analyzer stems and, for compounding languages like Swedish, splits compound words at index time. Pass the
+language to the search (`client.Search<T>(Language.Swedish)`, `UnifiedSearch(Language.Swedish)`) and `For()` /
+`InField()` search those fields; since 3.0 `FuzzyMatch()` and `WildcardMatch()` search them too.
+
+Measured on the Swedish demo products (Swedish language pages, both CMS 11 + Find 13.6.1 and CMS 12 + Find 17.1):
+
+| Query | `Language.Swedish` | `Language.English` |
+|---|---|---|
+| `kopp` | Kaffekopp | - |
+| `väska` | Datorväska | - |
+| `maskin` | Diskmaskin, Tvättmaskin | - |
+| `lampa` | Skrivbordslampa | - |
+| `koppar` (plural) | Kaffekopp | - |
+
+Use the language of the content: English has no decompounding (`note` does not find "notebook"), and a Swedish
+analyzer on English text would not help either.
+
 ### MinimumShouldMatch()
 
 How many of the query's terms a document must contain. A middle ground between OR (too many hits) and AND (no hits).

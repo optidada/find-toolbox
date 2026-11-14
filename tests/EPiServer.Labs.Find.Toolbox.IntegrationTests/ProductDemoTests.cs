@@ -64,9 +64,9 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
         {
             var result = await Search(site, "");
 
-            Assert.Equal(ProductDataset.Products.Length, result.Total);
+            Assert.Equal(ProductDataset.Products.Length + ProductDataset.SwedishProducts.Length, result.Total);
             Assert.Equal(8, result.Facets["category"]["Laptops"]);
-            Assert.Equal(ProductDataset.Products.Count(p => p.Brand == "Fabrikam"), result.Facets["brand"]["Fabrikam"]);
+            Assert.Equal(ProductDataset.Products.Concat(ProductDataset.SwedishProducts).Count(p => p.Brand == "Fabrikam"), result.Facets["brand"]["Fabrikam"]);
         }
 
         [SkippableTheory]
@@ -157,5 +157,47 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
 
             Assert.Contains(expected, result.Hits.Select(h => h.Name));
         }
-    }
+    
+        // --- Swedish: Find's Swedish analyzer decompounds (and stems) at index time on the .sv fields. Searching with
+        //     Language.Swedish finds parts of compound words - the main query and, since 3.0, FuzzyMatch/WildcardMatch
+        //     search the language field too. With Language.English (no decompounding) the parts are not found.
+
+        [SkippableTheory]
+        [InlineData("cms11", "kopp", "Kaffekopp i porslin")]
+        [InlineData("cms11", "väska", "Datorväska 15 tum")]
+        [InlineData("cms11", "maskin", "Diskmaskin integrerad")]
+        [InlineData("cms11", "maskin", "Tvättmaskin 8 kg")]
+        [InlineData("cms11", "lampa", "Skrivbordslampa LED")]
+        [InlineData("cms12", "kopp", "Kaffekopp i porslin")]
+        [InlineData("cms12", "väska", "Datorväska 15 tum")]
+        [InlineData("cms12", "maskin", "Diskmaskin integrerad")]
+        [InlineData("cms12", "maskin", "Tvättmaskin 8 kg")]
+        [InlineData("cms12", "lampa", "Skrivbordslampa LED")]
+        public async Task Swedish_finds_parts_of_compound_words_English_does_not(string site, string part, string compound)
+        {
+            var swedish = await Search(site, Q(part) + "&lang=sv");
+            var english = await Search(site, Q(part) + "&lang=en");
+
+            Assert.Contains(compound, swedish.Hits.Select(h => h.Name));
+            Assert.DoesNotContain(compound, english.Hits.Select(h => h.Name));
+        }
+
+        [SkippableTheory]
+        [MemberData(nameof(Sites))]
+        public async Task Swedish_stems_plurals_of_compound_parts(string site)
+        {
+            var result = await Search(site, Q("koppar") + "&lang=sv");
+
+            Assert.Contains("Kaffekopp i porslin", result.Hits.Select(h => h.Name));
+        }
+
+        [SkippableTheory]
+        [MemberData(nameof(Sites))]
+        public async Task Swedish_characters_work(string site)
+        {
+            var result = await Search(site, Q("hörlurar") + "&lang=sv");
+
+            Assert.Contains("Trådlösa hörlurar", result.Hits.Select(h => h.Name));
+        }
+}
 }

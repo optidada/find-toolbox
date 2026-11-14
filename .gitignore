@@ -2,3 +2,10 @@
 .vs
 bin
 obj
+
+# Optimizely packages copy their UI zips into the project
+**/modules/_protected/
+# Local site data / secrets
+**/App_Data/
+appsettings.Development.json
+*.user

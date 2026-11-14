@@ -1,51 +1,60 @@
-﻿using EPiServer.Find;
+using EPiServer.Find;
+using EPiServer.Find.Cms;
 using EPiServer.Find.Connection;
 using EPiServer.Find.Framework.Statistics;
 using EPiServer.Find.Optimizations;
 using EPiServer.Find.Optimizations.Synonyms.Api;
-using EPiServer.Logging.Compatibility;
+using EPiServer.Logging;
 using EPiServer.ServiceLocation;
+using EPiServer.Framework.Cache;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace EPiServer.Find.Cms
+namespace EPiServer.Labs.Find.Toolbox
 {
     [ServiceConfiguration(Lifecycle = ServiceInstanceScope.Singleton)]
     public class SynonymLoader
     {
         private readonly IClient _client;
         private readonly IStatisticTagsHelper _statisticTagsHelper;
-        private static ILog log = LogManager.GetLogger(typeof(SearchRequestExtensions));
+        private readonly IObjectInstanceCache _cache;
+        private static readonly ILogger log = LogManager.GetLogger(typeof(SynonymLoader));
 
-        public SynonymLoader(IClient client, IStatisticTagsHelper statisticTagsHelper)
+        public static readonly TimeSpan DefaultCacheDuration = TimeSpan.FromHours(1);
+
+        public SynonymLoader(IClient client, IStatisticTagsHelper statisticTagsHelper, IObjectInstanceCache cache)
         {
             _client = client;
             _statisticTagsHelper = statisticTagsHelper;
+            _cache = cache;
         }
 
-        public Dictionary<String, HashSet<String>> GetSynonyms(TimeSpan? cacheDuration = null)
+        public Dictionary<string, HashSet<string>> GetSynonyms(TimeSpan? cacheDuration = null)
         {
-            return GetSynonyms(100, new RuntimeCacheAdapter(), new StaticCachePolicy(cacheDuration == null ? DateTime.Now.AddHours(1) : DateTime.Now.Add((TimeSpan)cacheDuration)));
+            return GetSynonyms(100, cacheDuration ?? DefaultCacheDuration);
         }
 
-        public Dictionary<String, HashSet<String>> GetSynonyms(int synonymBatchSize, RuntimeCacheAdapter cache, StaticCachePolicy staticCachePolicy)
+        public Dictionary<string, HashSet<string>> GetSynonyms(int synonymBatchSize, TimeSpan cacheDuration)
         {
-            var statisticLanguageTags = GetStatisticLanguageTags();
+            var statisticLanguageTags = GetStatisticLanguageTags().ToList();
             string synonymCacheKey = GetSynonymCacheKey(statisticLanguageTags);
 
-            Dictionary<String, HashSet<String>> synonymsCached;
-            if (TryGetCachedSynonym(synonymCacheKey, cache, out synonymsCached))
+            if (_cache.Get(synonymCacheKey) is Dictionary<string, HashSet<string>> synonymsCached)
             {
-                log.DebugFormat("Loaded {0} synonyms from cache (duration: {1}) for tags {2}", synonymsCached.Count, staticCachePolicy.ExpirationDate.ToString(), string.Join(",", statisticLanguageTags));
+                log.Debug("Loaded {0} synonyms from cache for tags {1}", synonymsCached.Count, string.Join(",", statisticLanguageTags));
                 return synonymsCached;
             }
 
-            var loadedSynonyms = LoadSynonymsFromSourceIndex(synonymBatchSize, statisticLanguageTags);
+            var loadedSynonyms = LoadSynonymsFromSourceIndex(synonymBatchSize, statisticLanguageTags).ToList();
             var synonymDictionary = CreateSynonymDictionary(loadedSynonyms);
-            cache.AddOrUpdate(synonymCacheKey, staticCachePolicy, synonymDictionary);
 
-            log.DebugFormat("Loaded {0} synonyms from index (duration: {1}) for tags {2}", loadedSynonyms.Count(), staticCachePolicy.ExpirationDate.ToString(), string.Join(",", statisticLanguageTags));
+            if (cacheDuration > TimeSpan.Zero)
+            {
+                _cache.Insert(synonymCacheKey, synonymDictionary, new CacheEvictionPolicy(cacheDuration, CacheTimeoutType.Absolute));
+            }
+
+            log.Debug("Loaded {0} synonyms from index (cache duration: {1}) for tags {2}", loadedSynonyms.Count, cacheDuration, string.Join(",", statisticLanguageTags));
             return synonymDictionary;
         }
 
@@ -64,16 +73,6 @@ namespace EPiServer.Find.Cms
             return string.Format("FindSynonymList_" + string.Join(",", statisticLanguageTags));
         }
 
-        private bool TryGetCachedSynonym(string synonymCacheKey, RuntimeCacheAdapter cache, out Dictionary<String, HashSet<String>> synonymsCached)
-        {
-            synonymsCached = cache.Get<Dictionary<String, HashSet<String>>>(synonymCacheKey);
-            if (synonymsCached == null)
-            {
-                return false;
-            }
-
-            return true;
-        }
 
         private IEnumerable<Synonym> LoadSynonymsFromSourceIndex(int synonymBatchSize, IEnumerable<string> statisticLanguageTags)
         {
@@ -84,7 +83,7 @@ namespace EPiServer.Find.Cms
             {
                 try
                 {
-                    var result = _client.Optimizations().Synonyms().List(synonymBatchSize, (page * synonymBatchSize), statisticLanguageTags);
+                    var result = _client.Optimizations().Synonyms().List(synonymBatchSize, page * synonymBatchSize, statisticLanguageTags);
                     var hits = result.Hits.Count();
                     if (hits > 0) { synonyms.AddRange(result.Hits); }
                     if (hits < synonymBatchSize) // Not a full batch indicates last batch
@@ -161,13 +160,13 @@ namespace EPiServer.Find.Cms
             }
             else
             {
-                synonyms.Add(phrase, new HashSet<String>() { synonym });
+                synonyms.Add(phrase, new HashSet<string>() { synonym });
             }
         }
 
         private static bool ContainsMultipleTerms(string text)
         {
-            return (text.Split(new string[] { " " }, StringSplitOptions.RemoveEmptyEntries).Count() > 1);
+            return text.Split(new string[] { " " }, StringSplitOptions.RemoveEmptyEntries).Count() > 1;
         }
     }
 }

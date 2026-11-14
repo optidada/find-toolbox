@@ -15,23 +15,25 @@ using System;
 using EPiServer.Find.Framework;
 using System.Linq;
 using Newtonsoft.Json.Linq;
-using EPiServer.Find.UnifiedSearch;
 
-namespace EPiServer.Find.Cms.SearchProviders
+using EPiServer.Find.Cms;
+using EPiServer.Find.Cms.SearchProviders;
+
+namespace EPiServer.Labs.Find.Toolbox.SearchProviders
 {
 
     [SearchProvider]
-    public class ToolboxPageSearchProvider : EnterprisePageSearchProvider
+    public class ToolboxMediaSearchProvider : EnterpriseMediaSearchProvider
     {
 
         private readonly UIDescriptorRegistry _uiDescriptorRegistry;
         private const string AllowedTypes = "allowedTypes";
         private const string RestrictedTypes = "restrictedTypes";
 
-        public override string Area => FindContentSearchProviderConstants.PageArea;
-        public override string Category => "Find Toolbox - Pages";
+        public override string Area => FindContentSearchProviderConstants.MediaArea;
+        public override string Category => "Find Toolbox - Media";
 
-        public ToolboxPageSearchProvider(LocalizationService localizationService,
+        public ToolboxMediaSearchProvider(LocalizationService localizationService,
                 ISiteDefinitionResolver siteDefinitionResolver, IContentTypeRepository contentTypeRepository,
                 UIDescriptorRegistry uiDescriptorRegistry)
                 : base(localizationService, siteDefinitionResolver, contentTypeRepository, uiDescriptorRegistry)
@@ -75,11 +77,11 @@ namespace EPiServer.Find.Cms.SearchProviders
                     .GetResult();
 
 
-                PageData content = null;
+                MediaData content = null;
                 return contentLinksWithLanguage
                     .Where(
                         searchResult =>
-                        DataFactory.Instance.TryGet<PageData>(searchResult.ContentLink,
+                        DataFactory.Instance.TryGet<MediaData>(searchResult.ContentLink,
                                                                !String.IsNullOrEmpty(searchResult.Language)
                                                                    ? new LanguageSelector(searchResult.Language)
                                                                    : LanguageSelector.AutoDetect(true), out content))
@@ -98,18 +100,10 @@ namespace EPiServer.Find.Cms.SearchProviders
             }
 
             var query = SearchClient.Instance.Search<IContentData>(language)
-                .For(SearchQuery);
-
-            if (StringExtensions.IsAbsoluteUrl(SearchQuery))
-            {
-                query = query.InField(x => ((ISearchContent)x).SearchHitUrl);
-                return query
-                .Take(maxResults);
-            }
-
-            query = query.InField(x => ((IContent)x).Name, 10)
-                         .InField(x => ((IContent)x).ContentTypeName(), 0.5)
-                         .InField(x => x.SearchText());
+                .For(SearchQuery)
+                .InField(x => ((IContent)x).Name, 10)
+                .InField(x => ((IContent)x).ContentTypeName(), 2)
+                .InField(x => x.SearchText());
 
             int parsedQuery;
             if (int.TryParse(SearchQuery, out parsedQuery))
@@ -117,12 +111,7 @@ namespace EPiServer.Find.Cms.SearchProviders
                 query = query.InField(x => ((IContent)x).ContentLink.ID, 10);
             }
 
-            DateTime parsedDate;
-            if (DateTime.TryParse(SearchQuery, out parsedDate))
-            {
-                query = query.InField(x => ((ISearchContent)x).SearchPublishDate.ToString());
-            }
-
+            query = AddContentSpecificFields(query);
             query = AddFindToolboxQueries(query);
 
             return query
@@ -173,9 +162,11 @@ namespace EPiServer.Find.Cms.SearchProviders
                     .UsingSynonymsImproved()
                     .UsingRelevanceImproved(x => ((IContent)x).Name, x => x.SearchText(), x => ((IContent)x).ContentTypeName())
                     .WildcardMatch(x => ((IContent)x).Name, x => ((IContent)x).ContentTypeName())
-                    .FuzzyMatch(x => ((IContent)x).Name, x => ((IContent)x).ContentTypeName());                    
+                    .FuzzyMatch(x => ((IContent)x).Name, x => ((IContent)x).ContentTypeName());
 
             return query;
         }
+
     }
+
 }

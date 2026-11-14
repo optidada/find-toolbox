@@ -69,42 +69,35 @@ All extensions build on the `query_string` query created by `.For()`.
 
 ### Why UsingSynonymsImproved() instead of Find's UsingSynonyms()
 
-Find's built-in `.UsingSynonyms()` sends the query to a server-side `synonym` analyzer that reads Find's synonym
-index. `.UsingSynonymsImproved()` loads the synonyms (the same list editors manage in the Find UI) and expands the
-query on the client, as part of the `query_string` the rest of the toolbox builds on.
+Find's built-in `.UsingSynonyms()` sends the query to a server-side synonym analyzer (`synonym_<language>`) that uses
+Find's synonym index. `.UsingSynonymsImproved()` loads the same synonym list (the one editors manage in the Find UI)
+and expands the query on the client, inside the `query_string` that `MinimumShouldMatch()`, AND and the rest of the
+toolbox work with.
 
-| | `UsingSynonyms()` (Find) | `UsingSynonymsImproved()` (toolbox) |
-|---|---|---|
-| Where synonyms are expanded | Search & Navigation backend, synonym analyzer | Client side, in the query you send |
-| Depends on the synonym index being up to date | Yes | No: reads the synonym list (cached, default 1 hour) |
-| `MinimumShouldMatch()` | Not supported together | A term and all its synonyms count as **one** term |
-| `WithAndAsDefaultOperator()` | Unexplainable hits / misses reported | AND kept: every term (or one of its synonyms) required |
-| Multi-word synonyms (`find => search & navigation`) | Limited | All words of the synonym required, any order |
-| Multi-word phrase to synonym (`new york <=> nyc`), bidirectional | Limited | Longest phrase first, both directions |
-| Phrases in quotes (`"new york"`) | Limited | Supported |
-| Case of synonyms typed in the Find UI (`Colour`) | Case sensitive | Case insensitive |
-| Ranking of synonym matches | Like the original word | Below the user's own words (`SynonymBoost`) |
-| Unwanted built-in synonyms | Possible | Only your synonym list |
-| Expansion limits | Backend | Configurable (`MaxSynonymsPerPhrase`, `MaxExpandedPhrases`, ...) |
-
-**Measured** with the integration test data (synonyms `find => search & navigation`, `new york <=> nyc`,
-`Colour => Color`, `car => automobile`; same results on CMS 11 + Find 13.6.1 and CMS 12 + Find 17.1):
+Measured on the integration test data with **UnifiedSearch** (synonyms `find => search & navigation`,
+`new york <=> nyc`, `Colour => Color`, `car => automobile`; identical on CMS 11 + Find 13.6.1 and CMS 12 + Find 17.1):
 
 | Query | Expected | `UsingSynonyms()` | `UsingSynonymsImproved()` |
 |---|---|---|---|
-| `car insurance` (AND) | Automobile insurance basics | none | ✅ |
-| `episerver find` (AND or MinimumShouldMatch 100%) | Episerver Find is fast, Search & Navigation from Episerver | only "Episerver Find is fast" | ✅ |
-| `find` (OR) | + Search & Navigation from Episerver | missing | ✅ |
-| `new york pizza` (AND) | Pizza in New York, Best NYC pizza | only "Pizza in New York" | ✅ |
-| `nyc pizza` (AND) | Pizza in New York, Best NYC pizza | only "Best NYC pizza" | ✅ |
-| `"new york" pizza` (AND) | Pizza in New York, Best NYC pizza | only "Pizza in New York" | ✅ |
-| `colour palette` (AND) | Color palette guide | none | ✅ |
+| `car insurance` (AND) | Automobile insurance basics | ✅ | ✅ |
+| `find` (OR) | Episerver Find is fast, Search & Navigation from Episerver, Find your way home | ✅ | ✅ |
+| `nyc pizza` (AND) | Pizza in New York, Best NYC pizza | ✅ | ✅ |
+| `colour palette` (AND) | Color palette guide | ✅ | ✅ |
+| `episerver find` (`WithAndAsDefaultOperator()`) | Episerver Find is fast, Search & Navigation from Episerver | ❌ also "Find your way home" and "Episerver CMS editing" (one word is enough) | ✅ |
+| `episerver find` (`MinimumShouldMatch("100%")`) | the same two | ❌ the same four | ✅ |
+| `episerver find editing fast` (`MinimumShouldMatch("75%")`) | Episerver Find is fast | ❌ four pages | ✅ |
+| `new york pizza` (AND) | Pizza in New York, Best NYC pizza | ❌ only "Pizza in New York" | ✅ |
+| `"new york" pizza` (AND) | Pizza in New York, Best NYC pizza | ❌ none | ✅ |
 
-> On this test index the built-in expansion did not apply any synonym, not even the simple `car => automobile`,
-> also hours after the synonyms were added: exactly the "depends on the synonym index" problem. Results on other
-> indexes may differ; the design differences in the first table do not.
+In short: simple synonyms work with both. With **AND** or **MinimumShouldMatch** the built-in returns documents that
+match only one of the words, and **multi-word phrases** (`new york`) and **quoted phrases** are not expanded. The
+improved synonyms also rank synonym matches below the user's own words and have configurable expansion limits.
 
-Run the comparison yourself on the test sites: `/toolbox-test/search?q=car insurance&mode=and&builtinSynonyms=true`.
+> Note: the built-in only applies synonyms when the query uses the language analyzer, i.e. with `UnifiedSearch` or
+> language specific fields. A typed `Search<T>().For(q).UsingSynonyms()` without language fields uses the generic
+> `synonym` analyzer and expanded nothing in the tests. `UsingSynonymsImproved()` works for both.
+
+Compare on the test sites: `/toolbox-test/search?q=episerver find&mode=and&unified=true&builtinSynonyms=true`.
 
 ### MinimumShouldMatch()
 

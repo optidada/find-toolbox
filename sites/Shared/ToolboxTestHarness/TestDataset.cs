@@ -102,6 +102,9 @@ namespace ToolboxTestHarness
         public double? FuzzyBoost { get; set; }
         public double? WildcardBoost { get; set; }
 
+        /// <summary>Call Find's .Track() (statistics; also sends the language/site tags with the request).</summary>
+        public bool Track { get; set; }
+
         /// <summary>Use Find's built-in .UsingSynonyms() instead of .UsingSynonymsImproved() (for comparison).</summary>
         public bool BuiltinSynonyms { get; set; }
 

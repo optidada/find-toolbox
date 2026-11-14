@@ -130,12 +130,25 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
         [SkippableTheory, MemberData(nameof(Targets))]
         public async Task Ranking_is_case_insensitive(string site, string type)
         {
-            var lower = await Search(site, type, "episerver find", FullChain);
-            var upper = await Search(site, type, "EPISERVER FIND", FullChain);
+            var client = await SiteClient.GetSeededAsync(site);
+            Skip.If(client == null, $"Set TOOLBOX_{site.ToUpperInvariant()}_URL to run against the {site} site.");
 
-            // Same hits in the same order; R1/R2 are near-ties whose order can differ between requests (per-shard statistics)
-            string Normalize(List<string> hits) => string.Join(",", hits.Select(h => h == "R2" ? "R1" : h));
-            Assert.Equal(Normalize(lower), Normalize(upper));
+            ToolboxSearchResponse Run(string q) => client.SearchAsync(new Dictionary<string, string>
+            {
+                ["q"] = q, ["mode"] = "msm", ["msm"] = "100%", ["relevance"] = "true", ["fuzzy"] = "true", ["wildcard"] = "true",
+                ["set"] = "relevance", ["unified"] = (type == "unified").ToString().ToLowerInvariant(),
+            }).GetAwaiter().GetResult();
+
+            var lower = Run("episerver find");
+            var upper = Run("EPISERVER FIND");
+
+            // The toolbox builds the same query apart from case (the analyzers lower case it) ...
+            string Normalize(string query) => System.Text.RegularExpressions.Regex.Replace(query, "nocache-[0-9a-f]+", "").ToLowerInvariant();
+            Assert.Equal(Normalize(lower.Query), Normalize(upper.Query));
+
+            // ... and finds the same pages. (The exact order of two separate searches can differ slightly between
+            // Elasticsearch replicas, so only the set is compared.)
+            Assert.Equal(lower.Hits.OrderBy(h => h), upper.Hits.OrderBy(h => h));
         }
 
         [SkippableTheory, MemberData(nameof(Targets))]

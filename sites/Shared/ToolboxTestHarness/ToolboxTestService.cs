@@ -5,6 +5,7 @@ using EPiServer.Find;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Cms;
 using EPiServer.Find.Framework;
+using EPiServer.Find.Framework.Statistics;
 using EPiServer.Find.Json;
 using EPiServer.Find.Optimizations;
 using EPiServer.Find.Optimizations.Synonyms.Api;
@@ -330,7 +331,7 @@ namespace ToolboxTestHarness
                     .Filter(x => x.MatchTypeHierarchy(typeof(AlloyPage)))
                     .Filter(x => !x.SearchTitle.Match(CacheBuster()))
                     .Take(100);
-                var result = await GetUnifiedResultAsync(search);
+                var result = await GetUnifiedResultAsync(request.Track ? search.Track() : search);
                 titles = result.Hits.Select(hit => System.Net.WebUtility.HtmlDecode(hit.Document.Title)).ToList();
                 scores = result.Hits.Select(hit => (double)(hit.Score ?? 0)).ToList();
                 queryJson = GetQueryJson(search);
@@ -341,7 +342,7 @@ namespace ToolboxTestHarness
                     .Filter(x => x.Ancestors().Match(containerId))
                     .Filter(x => !x.Name.Match(CacheBuster()))
                     .Take(100);
-                var result = await GetResultAsync(search.Select(x => x.Name));
+                var result = await GetResultAsync((request.Track ? search.Track() : search).Select(x => x.Name));
                 titles = result.Hits.Select(hit => hit.Document).ToList();
                 scores = result.Hits.Select(hit => (double)(hit.Score ?? 0)).ToList();
                 queryJson = GetQueryJson(search);

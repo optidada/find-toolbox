@@ -1,4 +1,4 @@
-﻿using EPiServer.Find;
+using EPiServer.Find;
 using EPiServer.Find.Cms;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Helpers;
@@ -13,8 +13,9 @@ namespace EPiServer.Labs.Find.Toolbox
 
     public static class SearchExtensions
     {
+        // Note: the timeout is in MILLISECONDS (the parameter used to be misnamed durationInSeconds).
 
-        public static ITypeSearch<TResult> SetTimeout<TResult>(this ITypeSearch<TResult> search, int durationInSeconds)
+        public static ITypeSearch<TResult> SetTimeout<TResult>(this ITypeSearch<TResult> search, int milliseconds)
         {
             return new Search<TResult, IQuery>(search, context =>
             {
@@ -25,13 +26,13 @@ namespace EPiServer.Labs.Find.Toolbox
                     {
                         existingAction(command);
                     }
-                    command.ExplicitRequestTimeout = durationInSeconds;
+                    command.ExplicitRequestTimeout = milliseconds;
                 };
 
             });
         }
 
-        public static ISearch<TResult> SetTimeout<TResult>(this ISearch<TResult> search, int durationInSeconds)
+        public static ISearch<TResult> SetTimeout<TResult>(this ISearch<TResult> search, int milliseconds)
         {
             return new Search<TResult, IQuery>(search, context =>
             {
@@ -42,19 +43,19 @@ namespace EPiServer.Labs.Find.Toolbox
                     {
                         existingAction(command);
                     }
-                    command.ExplicitRequestTimeout = durationInSeconds;
+                    command.ExplicitRequestTimeout = milliseconds;
                 };
 
             });
         }
 
-        public static IMultiSearch<TResult> SetTimeout<TResult>(this IMultiSearch<TResult> multiSearch, int durationInSeconds)
+        public static IMultiSearch<TResult> SetTimeout<TResult>(this IMultiSearch<TResult> multiSearch, int milliseconds)
         {
             var searches = new List<ISearch<TResult>>(multiSearch.Searches);
             multiSearch.Searches.Clear();
             foreach (var search in searches)
             {
-                multiSearch.Searches.Add(search.SetTimeout(durationInSeconds));
+                multiSearch.Searches.Add(search.SetTimeout(milliseconds));
             }
             return multiSearch;
         }

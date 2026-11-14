@@ -11,7 +11,7 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
             => SynonymLoader.CreateSynonymDictionary(synonyms.Select(s => TestSynonyms.Create(s.phrase, s.synonym, s.bidirectional)));
 
         private static SynonymExpansion Expand(string query, params (string, string, bool)[] synonyms)
-            => SynonymExpander.Expand(QueryHelpers.GetQueryPhrases(query), Dictionary(synonyms));
+            => SynonymExpander.Expand(QueryHelpers.GetQueryPhrases(query), Dictionary(synonyms), TestSearch.Unboosted);
 
         [Fact]
         public void No_synonyms_returns_the_terms()

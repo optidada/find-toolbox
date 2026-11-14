@@ -14,11 +14,13 @@ namespace EPiServer.Labs.Find.Toolbox
     public class UsingSynonymService
     {
         private readonly ISynonymProvider _synonymProvider;
+        private readonly FindToolboxOptions _options;
         private static readonly ILogger log = LogManager.GetLogger(typeof(UsingSynonymService));
 
-        public UsingSynonymService(ISynonymProvider synonymProvider)
+        public UsingSynonymService(ISynonymProvider synonymProvider, FindToolboxOptions options)
         {
             _synonymProvider = synonymProvider ?? throw new ArgumentNullException(nameof(synonymProvider));
+            _options = options ?? FindToolboxOptions.Defaults;
         }
 
         public IQueriedSearch<TSource, QueryStringQuery> UsingSynonyms<TSource>(IQueriedSearch<TSource> search, TimeSpan? cacheDuration = null)
@@ -43,20 +45,20 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                var terms = QueryHelpers.GetQueryPhrases(rawQuery);
+                var terms = QueryHelpers.GetQueryPhrases(rawQuery, _options.MaxQueryTerms);
                 if (terms.Length == 0)
                 {
                     return;
                 }
 
-                var expansion = SynonymExpander.Expand(terms, _synonymProvider.GetSynonyms(cacheDuration));
+                var expansion = SynonymExpander.Expand(terms, _synonymProvider.GetSynonyms(cacheDuration), _options);
 
                 // Without synonym matches the user's query is left untouched (including any operators),
                 // we only record the match variations for UsingRelevanceImproved().
                 var queryText = expansion.HasSynonyms ? expansion.ExpandedQuery : queryStringQuery.Query?.ToString();
 
                 var newQuery = CreateQuery(queryText, queryStringQuery);
-                newQuery.QueriesForMatch = expansion.QueriesForMatch.Take(3).ToArray();
+                newQuery.QueriesForMatch = expansion.QueriesForMatch.Take(Math.Max(1, _options.MaxQueriesForMatch)).ToArray();
                 newQuery.IsSingleClause = expansion.HasSynonyms && expansion.ClauseCount == 1;
 
                 ReplaceQuery(context, currentBoolQuery, newQuery);

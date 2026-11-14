@@ -19,11 +19,6 @@ namespace EPiServer.Labs.Find.Toolbox
         private static Lazy<UsingSynonymService> _lazyUsingSynonymService = new Lazy<UsingSynonymService>(() => ServiceLocator.Current.GetInstance<UsingSynonymService>());
         private static readonly ILogger log = LogManager.GetLogger(typeof(SearchRequestExtensions));
 
-        private static double PREFIXQUERY_DEFAULT_BOOST = 0.5;
-        private static double PHRASEPREFIXQUERY_DEFAULT_BOOST = 5;
-        private static double PHRASEQUERY_DEFAULT_BOOST = 10;
-        private static double WILDCARD_DEFAULT_BOOST = 0.2;
-        private static double FUZZY_DEFAULT_BOOST = 0.4;
 
         public static IQueriedSearch<TSource, QueryStringQuery> UsingSynonymsImproved<TSource>(this IQueriedSearch<TSource> search, TimeSpan? cacheDuration = null)
         {
@@ -87,7 +82,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 }
 
 
-                IEnumerable<string> queriesForMatch = null;
+                IList<string> queriesForMatch = null;
 
                 // If .UsingSynonymsImproved() was used we use QueriesForMatch (original + synonym variations) instead of the raw query
                 if (currentQuery is MinShouldMatchQueryStringQuery msmQuery && msmQuery.QueriesForMatch != null && msmQuery.QueriesForMatch.Length > 0)
@@ -100,40 +95,65 @@ namespace EPiServer.Labs.Find.Toolbox
                 }
 
 
-                foreach (var queryForMatch in queriesForMatch)
+                var options = FindToolboxOptions.Current;
+                var originalTermCount = 1;
+                for (var variation = 0; variation < queriesForMatch.Count; variation++)
                 {
-                    // match_phrase / match_phrase_prefix / prefix are not query_string queries: no escaping, no quotes
-                    var query = queryForMatch.Replace("\"", string.Empty).Trim();
-                    if (query.Length == 0)
+                    // match_phrase / match_phrase_prefix / prefix are not query_string queries: no escaping, no quotes.
+                    // Punctuation only tokens (e.g. & in "search & navigation") are dropped: Find's shingled fields index them
+                    // as tokens, which inflates phrase scores. Limit the number of terms: match_phrase_prefix expands the last term.
+                    var terms = queriesForMatch[variation].Replace("\"", string.Empty)
+                                             .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                             .Where(t => t.Any(char.IsLetterOrDigit))
+                                             .Take(Math.Max(1, options.MaxRelevanceTerms))
+                                             .ToArray();
+                    if (terms.Length == 0)
                     {
                         continue;
                     }
 
-                    var terms = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);                    
+                    // The first variation is the user's query; the rest are synonym variations. Synonym variations get
+                    // a lower boost, normalized by length: phrase scores grow with the number of (shingled) terms, so a
+                    // longer synonym would otherwise outrank the user's own words.
+                    double factor;
+                    if (variation == 0)
+                    {
+                        originalTermCount = terms.Length;
+                        factor = 1;
+                    }
+                    else
+                    {
+                        factor = options.SynonymVariationBoostFactor * Math.Min(1.0, (double)originalTermCount / terms.Length);
+                    }
+
+                    var query = string.Join(" ", terms);
 
                     foreach (var fieldSelector in fieldSelectors)
                     {
                         var fieldNameLowercase = search.Client.Conventions.FieldNameConvention.GetFieldNameForLowercase(fieldSelector);
                         var fieldNameAnalyzed = search.Client.Conventions.FieldNameConvention.GetFieldNameForAnalyzed(fieldSelector);
 
-                        // Create PrefixQuery for single term queries longer  than 1 character
-                        if (terms.Count() == 1 && terms.First().Length > 1)
+                        if (terms.Length == 1)
                         {
-                            var prefixQuery = new PrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = PREFIXQUERY_DEFAULT_BOOST };
-                            newBoolQuery.Should.Add(prefixQuery);
-                        }
+                            // Field contains the term
+                            if (terms[0].Length > 1)
+                            {
+                                newBoolQuery.Should.Add(new PhraseQuery(fieldNameAnalyzed, query) { Boost = options.PhraseBoost * factor });
+                            }
 
-                        // Create PhraseQuery and PhrasePrefixQuery for multiple term queries where any term is longer than 1 character                                             
-                        if (terms.Count() > 1 && terms.Any(x => x.Length > 1))
+                            // Field starts with the term
+                            if (terms[0].Length >= options.MinPrefixLength)
+                            {
+                                newBoolQuery.Should.Add(new PrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = options.PrefixBoost * factor });
+                            }
+                        }
+                        else if (terms.Any(x => x.Length > 1))
                         {
-                            var phraseQuery = new PhraseQuery(fieldNameAnalyzed, query) { Boost = PHRASEQUERY_DEFAULT_BOOST };
-                            var phrasePrefixQuery = new PhrasePrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = PHRASEPREFIXQUERY_DEFAULT_BOOST };
-                            newBoolQuery.Should.Add(phraseQuery);
-                            newBoolQuery.Should.Add(phrasePrefixQuery);
+                            // Field contains the phrase / field starts with the phrase
+                            newBoolQuery.Should.Add(new PhraseQuery(fieldNameAnalyzed, query) { Boost = options.PhraseBoost * factor });
+                            newBoolQuery.Should.Add(new PhrasePrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = options.PhrasePrefixBoost * factor });
                         }
-
                     }
-
                 }
 
                 log.Debug("Added PrefixQuery, PhraseQuery and PhrasePrefixQuery to search");
@@ -143,7 +163,7 @@ namespace EPiServer.Labs.Find.Toolbox
 
         public static IQueriedSearch<TSource, QueryStringQuery> FuzzyMatch<TSource>(this IQueriedSearch<TSource> search, params Expression<Func<TSource, string>>[] fieldSelectors)
         {
-            return search.FuzzyMatch(FUZZY_DEFAULT_BOOST, fieldSelectors);
+            return search.FuzzyMatch(FindToolboxOptions.Current.FuzzyBoost, fieldSelectors);
         }
 
         public static IQueriedSearch<TSource, QueryStringQuery> FuzzyMatch<TSource>(this IQueriedSearch<TSource> search, double boost, params Expression<Func<TSource, string>>[] fieldSelectors)
@@ -185,8 +205,8 @@ namespace EPiServer.Labs.Find.Toolbox
                 var terms = QueryHelpers.GetQueryPhrases(query);
 
                 // Only take terms > 2 chars and take max 3 of these
-                string[] candidateTerms = terms.Where(x => x.Length > 2 && x.Length <= 16)
-                                               .Take(3)
+                var options = FindToolboxOptions.Current;
+                string[] candidateTerms = FuzzyWildcardCandidates(terms, options)
                                                .Select(x => string.Format("{0}{1}", x.Quote(), "~")).ToArray();
 
                 if (candidateTerms.Count() == 0)
@@ -209,7 +229,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     Fields = fieldNames,
                     DefaultOperator = (currentQuery as QueryStringQuery).DefaultOperator,
                     MinimumShouldMatch = (currentQuery as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch,
-                    FuzzyPrefixLength = 3,
+                    FuzzyPrefixLength = options.FuzzyPrefixLength,
                     Boost = boost
                 };
 
@@ -221,7 +241,7 @@ namespace EPiServer.Labs.Find.Toolbox
 
         public static IQueriedSearch<TSource, QueryStringQuery> WildcardMatch<TSource>(this IQueriedSearch<TSource> search, params Expression<Func<TSource, string>>[] fieldSelectors)
         {
-            return search.WildcardMatch(WILDCARD_DEFAULT_BOOST, doubleSided: false, fieldSelectors);
+            return search.WildcardMatch(FindToolboxOptions.Current.WildcardBoost, doubleSided: false, fieldSelectors);
         }
 
         public static IQueriedSearch<TSource, QueryStringQuery> WildcardMatch<TSource>(this IQueriedSearch<TSource> search, double boost, bool doubleSided, params Expression<Func<TSource, string>>[] fieldSelectors)
@@ -264,8 +284,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 var terms = QueryHelpers.GetQueryPhrases(query);
 
                 // Limit term size and term count
-                string[] candidateTerms = terms.Where(x => x.Length > 2 && x.Length <= 16)
-                                               .Take(3)
+                string[] candidateTerms = FuzzyWildcardCandidates(terms, FindToolboxOptions.Current)
                                                .Select(x => doubleSided ? string.Format("*{0}*", x.Quote()) : string.Format("{0}*", x.Quote()))
                                                .ToArray();
 
@@ -296,6 +315,14 @@ namespace EPiServer.Labs.Find.Toolbox
                 context.RequestBody.Query = newBoolQuery;
                 log.Debug("Added wildcard {0} to search", wildcardQueryString);
             });
+        }
+
+        private static IEnumerable<string> FuzzyWildcardCandidates(IEnumerable<string> terms, FindToolboxOptions options)
+        {
+            return terms.Where(x => !QueryHelpers.IsStringQuoted(x)
+                                    && x.Length >= options.MinFuzzyWildcardTermLength
+                                    && x.Length <= options.MaxFuzzyWildcardTermLength)
+                        .Take(Math.Max(0, options.MaxFuzzyWildcardTerms));
         }
 
         public static IQueriedSearch<TSource, QueryStringQuery> InFieldImproved<TSource, TExistingQuery>(

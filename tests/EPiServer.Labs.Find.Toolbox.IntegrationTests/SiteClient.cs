@@ -59,18 +59,22 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             response.EnsureSuccessStatusCode();
 
             // Wait until every seeded page is searchable (the index refreshes asynchronously)
-            var deadline = DateTime.UtcNow.AddSeconds(90);
+            // Require the expected count several times in a row: deletes of earlier test pages are asynchronous too
+            var expected = TestDataset.Documents.Length + TestDataset.RelevanceDocuments.Length;
+            var deadline = DateTime.UtcNow.AddSeconds(120);
+            var stable = 0;
             while (true)
             {
                 var count = int.Parse(await Http.GetStringAsync(new Uri(_baseUri, "toolbox-test/count")));
-                if (count == TestDataset.Documents.Length)
+                stable = count == expected ? stable + 1 : 0;
+                if (stable >= 3)
                 {
                     return;
                 }
 
                 if (DateTime.UtcNow > deadline)
                 {
-                    throw new TimeoutException($"{Site}: expected {TestDataset.Documents.Length} seeded documents in the index, found {count}");
+                    throw new TimeoutException($"{Site}: expected {expected} seeded documents in the index, found {count}");
                 }
 
                 await Task.Delay(1000);

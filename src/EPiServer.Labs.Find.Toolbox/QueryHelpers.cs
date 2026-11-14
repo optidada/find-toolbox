@@ -1,3 +1,4 @@
+using System;
 using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
@@ -16,7 +17,9 @@ namespace EPiServer.Labs.Find.Toolbox
         private static readonly string[] AndOrNotOperators = { "AND", "OR", "NOT" };
         private static readonly char[] TrailingPunctuation = { '.', ',', ':', '/', '-' };
 
-        public static string[] GetQueryPhrases(string query)
+        public static string[] GetQueryPhrases(string query) => GetQueryPhrases(query, FindToolboxOptions.Current.MaxQueryTerms);
+
+        public static string[] GetQueryPhrases(string query, int maxTerms)
         {
             if (string.IsNullOrWhiteSpace(query))
             {
@@ -30,7 +33,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 .Select(c => c.Value.Trim())
                 .Select(t => t.StartsWith("\"") ? SpaceTabsRegex.Replace(t, " ") : t.TrimEnd(TrailingPunctuation))
                 .Where(t => t.Length > 0 && !AndOrNotOperators.Contains(t))
-                .Take(50)
+                .Take(Math.Max(1, maxTerms))
                 .ToArray();
         }
 

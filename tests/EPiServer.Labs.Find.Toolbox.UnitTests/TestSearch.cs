@@ -55,7 +55,10 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
         public static IQueriedSearch<Doc, EPiServer.Find.Api.Querying.Queries.QueryStringQuery> For(string query) => Client.Search<Doc>().For(query);
 
         public static UsingSynonymService Synonyms(params (string phrase, string synonym, bool bidirectional)[] synonyms)
-            => new UsingSynonymService(new FakeSynonymProvider(synonyms));
+            => new UsingSynonymService(new FakeSynonymProvider(synonyms), Unboosted);
+
+        /// <summary>Options without synonym down-weighting, so structural tests read naturally.</summary>
+        public static FindToolboxOptions Unboosted => new FindToolboxOptions { SynonymBoost = 1, SynonymVariationBoostFactor = 1 };
 
         /// <summary>Applies all search actions and returns the "query" part of the request body as JSON.</summary>
         public static JObject QueryJson(ISearch search)

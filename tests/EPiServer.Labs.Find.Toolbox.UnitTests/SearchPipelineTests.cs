@@ -10,6 +10,7 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
     /// <summary>
     /// Asserts the Elasticsearch request JSON that the toolbox generates. No Find index involved.
     /// </summary>
+    [Collection("FindToolboxOptions")]
     public class SearchPipelineTests
     {
         private static readonly UsingSynonymService FindSynonym = Synonyms(("find", "search & navigation", false));
@@ -135,7 +136,8 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
 
             var phrases = QueryJson(search).SelectTokens("$..match_phrase.*.query").Select(t => (string)t).ToList();
             Assert.Contains("episerver find", phrases);
-            Assert.Contains("episerver search & navigation", phrases);
+            // punctuation only tokens are dropped (Find shingled fields index "&" as a token)
+            Assert.Contains("episerver search navigation", phrases);
         }
 
         [Fact]
@@ -151,10 +153,10 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
         [Fact]
         public void Prefix_query_values_are_not_query_string_escaped()
         {
-            var search = For("c#").UsingRelevanceImproved(x => x.Title);
+            var search = For("c++").UsingRelevanceImproved(x => x.Title);
 
             var prefixValues = QueryJson(search).SelectTokens("$..prefix.*").Select(t => t.Type == JTokenType.Object ? (string)t["value"] ?? (string)t["prefix"] : (string)t).ToList();
-            Assert.Contains("c#", prefixValues);
+            Assert.Contains("c++", prefixValues);
         }
 
         [Fact]

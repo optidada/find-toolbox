@@ -20,20 +20,20 @@ namespace EPiServer.Labs.Find.Toolbox
         private readonly IClient _client;
         private readonly IStatisticTagsHelper _statisticTagsHelper;
         private readonly IObjectInstanceCache _cache;
+        private readonly FindToolboxOptions _options;
         private static readonly ILogger log = LogManager.GetLogger(typeof(SynonymLoader));
 
-        public static readonly TimeSpan DefaultCacheDuration = TimeSpan.FromHours(1);
-
-        public SynonymLoader(IClient client, IStatisticTagsHelper statisticTagsHelper, IObjectInstanceCache cache)
+        public SynonymLoader(IClient client, IStatisticTagsHelper statisticTagsHelper, IObjectInstanceCache cache, FindToolboxOptions options)
         {
             _client = client;
             _statisticTagsHelper = statisticTagsHelper;
             _cache = cache;
+            _options = options ?? FindToolboxOptions.Defaults;
         }
 
         public Dictionary<string, HashSet<string>> GetSynonyms(TimeSpan? cacheDuration = null)
         {
-            return GetSynonyms(100, cacheDuration ?? DefaultCacheDuration);
+            return GetSynonyms(100, cacheDuration ?? _options.SynonymCacheDuration);
         }
 
         public Dictionary<string, HashSet<string>> GetSynonyms(int synonymBatchSize, TimeSpan cacheDuration)
@@ -49,20 +49,31 @@ namespace EPiServer.Labs.Find.Toolbox
 
             if (!HasAdminIndex())
             {
-                return new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                var empty = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                Cache(synonymCacheKey, empty, Min(cacheDuration, _options.SynonymFailureCacheDuration));
+                return empty;
             }
 
-            var loadedSynonyms = LoadSynonymsFromSourceIndex(synonymBatchSize, statisticLanguageTags).ToList();
+            var loadedSynonyms = LoadSynonymsFromSourceIndex(synonymBatchSize, statisticLanguageTags, out var failed);
             var synonymDictionary = CreateSynonymDictionary(loadedSynonyms);
 
-            if (cacheDuration > TimeSpan.Zero)
-            {
-                _cache.Insert(synonymCacheKey, synonymDictionary, new CacheEvictionPolicy(cacheDuration, CacheTimeoutType.Absolute));
-            }
+            // A failed (partial) load is only cached briefly so a hiccup in Find does not disable synonyms for long
+            var duration = failed ? Min(cacheDuration, _options.SynonymFailureCacheDuration) : cacheDuration;
+            Cache(synonymCacheKey, synonymDictionary, duration);
 
-            log.Debug("Loaded {0} synonyms from index (cache duration: {1}) for tags {2}", loadedSynonyms.Count, cacheDuration, string.Join(",", statisticLanguageTags));
+            log.Debug("Loaded {0} synonyms from index (cache duration: {1}, failed: {2}) for tags {3}", loadedSynonyms.Count, duration, failed, string.Join(",", statisticLanguageTags));
             return synonymDictionary;
         }
+
+        private void Cache(string key, Dictionary<string, HashSet<string>> synonyms, TimeSpan duration)
+        {
+            if (duration > TimeSpan.Zero)
+            {
+                _cache.Insert(key, synonyms, new CacheEvictionPolicy(duration, CacheTimeoutType.Absolute));
+            }
+        }
+
+        private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 
         private bool HasAdminIndex()
         {
@@ -81,6 +92,44 @@ namespace EPiServer.Labs.Find.Toolbox
             }
 
             return false;
+        }
+
+        private List<Synonym> LoadSynonymsFromSourceIndex(int synonymBatchSize, IEnumerable<string> statisticLanguageTags, out bool failed)
+        {
+            var synonyms = new List<Synonym>();
+            var attempt = 0;
+            var page = 0;
+            failed = false;
+
+            while (true)
+            {
+                try
+                {
+                    var result = _client.Optimizations().Synonyms().List(synonymBatchSize, page * synonymBatchSize, statisticLanguageTags);
+                    var hits = result.Hits.ToList();
+                    synonyms.AddRange(hits);
+                    if (hits.Count < synonymBatchSize) // Not a full batch indicates last batch
+                    {
+                        break;
+                    }
+                    page++;
+                    attempt = 0;
+                }
+                catch (Exception ex)
+                {
+                    attempt++;
+                    log.Warning(string.Format("Failed to load synonyms (attempt {0} of {1})", attempt, _options.SynonymLoadAttempts), ex);
+                    if (attempt >= Math.Max(1, _options.SynonymLoadAttempts))
+                    {
+                        failed = true;
+                        break;
+                    }
+
+                    System.Threading.Thread.Sleep(TimeSpan.FromTicks(_options.SynonymRetryDelay.Ticks * attempt));
+                }
+            }
+
+            return synonyms;
         }
 
         /// <summary>

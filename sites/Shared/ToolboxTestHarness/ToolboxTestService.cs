@@ -37,11 +37,40 @@ namespace ToolboxTestHarness
     {
         private readonly IContentRepository _contentRepository;
         private readonly IClient _client;
+        private readonly FindToolboxOptions _options;
+        private static readonly System.Threading.SemaphoreSlim OptionsLock = new System.Threading.SemaphoreSlim(1, 1);
 
-        public ToolboxTestService(IContentRepository contentRepository, IClient client)
+        public ToolboxTestService(IContentRepository contentRepository, IClient client, FindToolboxOptions options)
         {
             _contentRepository = contentRepository;
             _client = client;
+            _options = options;
+        }
+
+        /// <summary>
+        /// Applies per-request boost overrides to the (singleton) options and returns an action restoring them.
+        /// Test sites only: requests are serialized by the caller.
+        /// </summary>
+        private Action ApplyBoostOverrides(ToolboxSearchRequest request)
+        {
+            var saved = new[] { _options.SynonymBoost, _options.SynonymVariationBoostFactor, _options.PhraseBoost, _options.PhrasePrefixBoost, _options.PrefixBoost, _options.FuzzyBoost, _options.WildcardBoost };
+            _options.SynonymBoost = request.SynonymBoost ?? _options.SynonymBoost;
+            _options.SynonymVariationBoostFactor = request.SynonymVariationBoostFactor ?? _options.SynonymVariationBoostFactor;
+            _options.PhraseBoost = request.PhraseBoost ?? _options.PhraseBoost;
+            _options.PhrasePrefixBoost = request.PhrasePrefixBoost ?? _options.PhrasePrefixBoost;
+            _options.PrefixBoost = request.PrefixBoost ?? _options.PrefixBoost;
+            _options.FuzzyBoost = request.FuzzyBoost ?? _options.FuzzyBoost;
+            _options.WildcardBoost = request.WildcardBoost ?? _options.WildcardBoost;
+            return () =>
+            {
+                _options.SynonymBoost = saved[0];
+                _options.SynonymVariationBoostFactor = saved[1];
+                _options.PhraseBoost = saved[2];
+                _options.PhrasePrefixBoost = saved[3];
+                _options.PrefixBoost = saved[4];
+                _options.FuzzyBoost = saved[5];
+                _options.WildcardBoost = saved[6];
+            };
         }
 
         private static CultureInfo Culture => CultureInfo.GetCultureInfo(TestDataset.Language);
@@ -64,24 +93,9 @@ namespace ToolboxTestHarness
                 await ResetIndexAsync();
             }
 
-            var container = GetOrCreateContainer();
-
-            // Remove previous test pages (deleting also removes them from the index)
-            foreach (var child in _contentRepository.GetChildren<IContent>(container.ContentLink).ToList())
-            {
-                _contentRepository.Delete(child.ContentLink, true, AccessLevel.NoAccess);
-            }
-
-            var pages = new List<AlloyPage>();
-            foreach (var document in TestDataset.Documents)
-            {
-                var page = _contentRepository.GetDefault<AlloyPage>(container.ContentLink, Culture);
-                page.Name = document.Title;
-                page.MetaTitle = document.Key;
-                page.MainBody = new XhtmlString("<p>" + System.Net.WebUtility.HtmlEncode(document.Title) + "</p>");
-                var reference = _contentRepository.Save(page, SaveAction.Publish, AccessLevel.NoAccess);
-                pages.Add(_contentRepository.Get<AlloyPage>(reference, Culture));
-            }
+            var container = GetOrCreateContainer(TestDataset.ContainerName);
+            var pages = SeedPages(container, TestDataset.Documents);
+            pages.AddRange(SeedPages(GetOrCreateContainer(TestDataset.RelevanceContainerName), TestDataset.RelevanceDocuments));
 
             // Publishing indexes through the event queue; index explicitly so the tests do not race the queue.
 #if NETFRAMEWORK
@@ -95,6 +109,28 @@ namespace ToolboxTestHarness
             return new { container = container.ContentLink.ID, pages = pages.Count, synonyms = TestDataset.Synonyms.Length, site = SiteName };
         }
 
+        private List<AlloyPage> SeedPages(AlloyContainer container, IEnumerable<TestDataset.TestDocument> documents)
+        {
+            // Remove previous test pages (deleting also removes them from the index)
+            foreach (var child in _contentRepository.GetChildren<IContent>(container.ContentLink).ToList())
+            {
+                _contentRepository.Delete(child.ContentLink, true, AccessLevel.NoAccess);
+            }
+
+            var pages = new List<AlloyPage>();
+            foreach (var document in documents)
+            {
+                var page = _contentRepository.GetDefault<AlloyPage>(container.ContentLink, Culture);
+                page.Name = document.Title;
+                page.MetaTitle = document.Key;
+                page.MainBody = new XhtmlString("<p>" + System.Net.WebUtility.HtmlEncode(document.Title) + "</p>");
+                var reference = _contentRepository.Save(page, SaveAction.Publish, AccessLevel.NoAccess);
+                pages.Add(_contentRepository.Get<AlloyPage>(reference, Culture));
+            }
+
+            return pages;
+        }
+
         /// <summary>
         /// Deletes ALL documents and ALL synonyms in the configured index. Only for dedicated test indexes.
         /// </summary>
@@ -105,6 +141,14 @@ namespace ToolboxTestHarness
 #else
             await _client.DeleteByQueryAsync(new MatchAllQuery(), command => { });
 #endif
+
+            // Delete by query runs asynchronously in Find: wait until the index is empty, otherwise it
+            // also removes pages that are seeded right after.
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            while (await CountAllAsync() > 0 && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(1000);
+            }
 
             while (true)
             {
@@ -121,12 +165,24 @@ namespace ToolboxTestHarness
             }
         }
 
+        private async Task<int> CountAllAsync()
+        {
+            var search = _client.Search<IContentData>()
+                                .Filter(x => !((IContent)x).Name.Match(CacheBuster()))
+                                .Select(x => ((IContent)x).Name)
+                                .Take(0);
+            return (await GetResultAsync(search)).TotalMatching;
+        }
+
         /// <summary>Number of seeded test pages that are searchable (no query string involved).</summary>
         public async Task<int> CountAsync()
         {
-            var containerId = GetOrCreateContainer().ContentLink.ID.ToString(CultureInfo.InvariantCulture);
+            var ids = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName }
+                .Select(name => GetOrCreateContainer(name).ContentLink.ID.ToString(CultureInfo.InvariantCulture))
+                .ToList();
             var search = _client.Search<AlloyPage>(EPiServer.Find.Language.English)
-                                .Filter(x => x.Ancestors().Match(containerId))
+                                .Filter(x => x.Ancestors().In(ids))
+                                .Filter(x => !x.Name.Match(CacheBuster()))
                                 .Select(x => x.Name)
                                 .Take(0);
             return (await GetResultAsync(search)).TotalMatching;
@@ -185,29 +241,47 @@ namespace ToolboxTestHarness
         private static Task<UnifiedSearchResults> GetUnifiedResultAsync(ITypeSearch<ISearchContent> search) => search.GetResultAsync();
 #endif
 
-        private AlloyContainer GetOrCreateContainer()
+        private AlloyContainer GetOrCreateContainer(string name)
         {
             var start = ContentReference.StartPage;
             var container = _contentRepository.GetChildren<AlloyContainer>(start, Culture)
-                                              .FirstOrDefault(c => c.Name == TestDataset.ContainerName);
+                                              .FirstOrDefault(c => c.Name == name);
             if (container != null)
             {
                 return container;
             }
 
             container = _contentRepository.GetDefault<AlloyContainer>(start, Culture);
-            container.Name = TestDataset.ContainerName;
+            container.Name = name;
             var reference = _contentRepository.Save(container, SaveAction.Publish, AccessLevel.NoAccess);
             return _contentRepository.Get<AlloyContainer>(reference, Culture);
         }
 
         public async Task<ToolboxSearchResponse> SearchAsync(ToolboxSearchRequest request)
         {
-            var container = GetOrCreateContainer();
+            // Overrides mutate shared options: serialize (test sites only)
+            await OptionsLock.WaitAsync();
+            var restore = ApplyBoostOverrides(request);
+            try
+            {
+                return await SearchCoreAsync(request);
+            }
+            finally
+            {
+                restore();
+                OptionsLock.Release();
+            }
+        }
+
+        private async Task<ToolboxSearchResponse> SearchCoreAsync(ToolboxSearchRequest request)
+        {
+            var relevanceSet = string.Equals(request.Set, "relevance", StringComparison.OrdinalIgnoreCase);
+            var container = GetOrCreateContainer(relevanceSet ? TestDataset.RelevanceContainerName : TestDataset.ContainerName);
             var containerId = container.ContentLink.ID.ToString(CultureInfo.InvariantCulture);
-            var keyByTitle = TestDataset.Documents.ToDictionary(d => d.Title, d => d.Key);
+            var keyByTitle = TestDataset.AllDocuments.ToDictionary(d => d.Title, d => d.Key);
 
             List<string> titles;
+            List<double> scores;
             string queryJson;
 
             if (request.Unified)
@@ -215,16 +289,22 @@ namespace ToolboxTestHarness
                 // The way the README uses the toolbox: UnifiedSearch + SearchTitle
                 var search = ApplyToolbox(_client.UnifiedSearch(EPiServer.Find.Language.English).For(request.Q ?? string.Empty), request, x => x.SearchTitle, x => x.SearchText)
                     .Filter(x => ((IContent)x).Ancestors().Match(containerId))
+                    .Filter(x => !x.SearchTitle.Match(CacheBuster()))
                     .Take(100);
-                titles = (await GetUnifiedResultAsync(search)).Select(hit => System.Net.WebUtility.HtmlDecode(hit.Title)).ToList();
+                var result = await GetUnifiedResultAsync(search);
+                titles = result.Hits.Select(hit => System.Net.WebUtility.HtmlDecode(hit.Document.Title)).ToList();
+                scores = result.Hits.Select(hit => (double)(hit.Score ?? 0)).ToList();
                 queryJson = GetQueryJson(search);
             }
             else
             {
                 var search = ApplyToolbox(_client.Search<AlloyPage>(EPiServer.Find.Language.English).For(request.Q ?? string.Empty), request, x => x.Name, x => x.SearchText())
                     .Filter(x => x.Ancestors().Match(containerId))
+                    .Filter(x => !x.Name.Match(CacheBuster()))
                     .Take(100);
-                titles = (await GetResultAsync(search.Select(x => x.Name))).ToList();
+                var result = await GetResultAsync(search.Select(x => x.Name));
+                titles = result.Hits.Select(hit => hit.Document).ToList();
+                scores = result.Hits.Select(hit => (double)(hit.Score ?? 0)).ToList();
                 queryJson = GetQueryJson(search);
             }
 
@@ -232,6 +312,7 @@ namespace ToolboxTestHarness
             {
                 Site = SiteName,
                 Hits = titles.Select(title => keyByTitle.TryGetValue(title, out var key) ? key : title).ToList(),
+                Scores = scores,
                 Query = queryJson
             };
         }
@@ -283,6 +364,12 @@ namespace ToolboxTestHarness
 
             return search;
         }
+
+        /// <summary>
+        /// The Find service sits behind a CDN that caches identical requests. A random, always-true filter makes
+        /// every request unique so tests see the index as it is right now (e.g. right after reseeding).
+        /// </summary>
+        private static string CacheBuster() => "nocache-" + Guid.NewGuid().ToString("N");
 
         private static string GetQueryJson(ISearch search)
         {

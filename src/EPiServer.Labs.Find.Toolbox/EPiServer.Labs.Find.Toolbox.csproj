@@ -22,6 +22,9 @@
     <RepositoryUrl>https://github.com/optidada/find-toolbox.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageReleaseNotes>3.0: one package for CMS 11 (Find 13.6.1) and CMS 12 (Find 17.1+). MinimumShouldMatch works with synonyms, AND is kept with synonyms, synonyms rank below the user's words, configurable limits and boosts (FindToolboxOptions), fixed CMS UI search providers. See the README for upgrade notes.</PackageReleaseNotes>
   </PropertyGroup>
 

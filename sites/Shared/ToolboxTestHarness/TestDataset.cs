@@ -104,6 +104,8 @@ namespace ToolboxTestHarness
         public double? PrefixBoost { get; set; }
         public double? FuzzyBoost { get; set; }
         public double? WildcardBoost { get; set; }
+        /// <summary>ignore | respect (FindToolboxOptions.BooleanOperators)</summary>
+        public string BooleanOperators { get; set; }
 
         /// <summary>Call Find's .Track() (statistics; also sends the language/site tags with the request).</summary>
         public bool Track { get; set; }

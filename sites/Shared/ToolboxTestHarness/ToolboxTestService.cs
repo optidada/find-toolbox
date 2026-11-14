@@ -56,6 +56,13 @@ namespace ToolboxTestHarness
         private Action ApplyBoostOverrides(ToolboxSearchRequest request)
         {
             var saved = new[] { _options.SynonymBoost, _options.SynonymVariationBoostFactor, _options.PhraseBoost, _options.PhrasePrefixBoost, _options.PrefixBoost, _options.FuzzyBoost, _options.WildcardBoost };
+            var savedOperators = _options.BooleanOperators;
+            if (!string.IsNullOrEmpty(request.BooleanOperators))
+            {
+                _options.BooleanOperators = string.Equals(request.BooleanOperators, "respect", StringComparison.OrdinalIgnoreCase)
+                    ? BooleanOperatorHandling.Respect
+                    : BooleanOperatorHandling.Ignore;
+            }
             _options.SynonymBoost = request.SynonymBoost ?? _options.SynonymBoost;
             _options.SynonymVariationBoostFactor = request.SynonymVariationBoostFactor ?? _options.SynonymVariationBoostFactor;
             _options.PhraseBoost = request.PhraseBoost ?? _options.PhraseBoost;
@@ -72,6 +79,7 @@ namespace ToolboxTestHarness
                 _options.PrefixBoost = saved[4];
                 _options.FuzzyBoost = saved[5];
                 _options.WildcardBoost = saved[6];
+                _options.BooleanOperators = savedOperators;
             };
         }
 

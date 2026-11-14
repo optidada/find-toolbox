@@ -40,14 +40,15 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                var originalQuery = (QueryStringQuery)currentQuery;
+                var options = FindToolboxOptions.Current;
+                var originalQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, options);
                 var query = new MinShouldMatchQueryStringQuery(originalQuery.Query);
                 QueryHelpers.CopySettings(originalQuery, query);
                 query.MinimumShouldMatch = minMatch;
                 query.DefaultOperator = BooleanOperator.Or;
                 // One term (or one synonym group): nothing to count, and the analyzer may turn the single word into
                 // several tokens (e.g. word + stem) that minimum_should_match would then all require.
-                query.IsSingleClause = query.IsSingleClause || IsSingleTerm(QueryHelpers.GetRawQueryString(originalQuery));
+                query.IsSingleClause = query.IsSingleClause || IsSingleTerm(QueryHelpers.GetRawQueryString(originalQuery), options);
 
                 if (ReferenceEquals(context.RequestBody.Query, currentBoolQuery) && currentBoolQuery.Should.Count > 0)
                 {
@@ -74,11 +75,13 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                // AND / OR / NOT: optional clauses could match documents the operators exclude
-                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
+                // Ignored (default): make sure the main query no longer contains them.
+                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
                 {
                     return;
                 }
+                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
 
                 // Keep the current bool query with current queries if it exists
                 if (currentBoolQuery.Should.Count > 0)
@@ -189,11 +192,13 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                // AND / OR / NOT: optional clauses could match documents the operators exclude
-                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
+                // Ignored (default): make sure the main query no longer contains them.
+                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
                 {
                     return;
                 }
+                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
 
                 // Keep the current bool query with current queries if it exists
                 if (currentBoolQuery.Should.Count > 0)
@@ -267,11 +272,13 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                // AND / OR / NOT: optional clauses could match documents the operators exclude
-                if (QueryHelpers.HasBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery)))
+                // AND / OR / NOT respected: optional clauses could match documents the operators exclude.
+                // Ignored (default): make sure the main query no longer contains them.
+                if (QueryHelpers.RespectsBooleanOperators(QueryHelpers.GetRawQueryString(currentQuery), FindToolboxOptions.Current))
                 {
                     return;
                 }
+                currentQuery = QueryHelpers.RemoveBooleanOperators(context, (QueryStringQuery)currentQuery, currentBoolQuery, FindToolboxOptions.Current);
 
                 // Keep the current bool query with current queries if it exists
                 if (currentBoolQuery.Should.Count > 0)
@@ -344,8 +351,8 @@ namespace EPiServer.Labs.Find.Toolbox
             return fieldNames.Distinct().ToList();
         }
 
-        private static bool IsSingleTerm(string rawQuery)
-            => !string.IsNullOrWhiteSpace(rawQuery) && !QueryHelpers.HasBooleanOperators(rawQuery) && QueryHelpers.GetQueryPhrases(rawQuery).Length == 1;
+        private static bool IsSingleTerm(string rawQuery, FindToolboxOptions options)
+            => !string.IsNullOrWhiteSpace(rawQuery) && !QueryHelpers.RespectsBooleanOperators(rawQuery, options) && QueryHelpers.GetQueryPhrases(rawQuery, options.MaxQueryTerms).Length == 1;
 
         private static IEnumerable<string> FuzzyWildcardCandidates(IEnumerable<string> terms, FindToolboxOptions options)
         {

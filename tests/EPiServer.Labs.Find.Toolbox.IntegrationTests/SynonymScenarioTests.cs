@@ -86,8 +86,11 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             new Scenario("wildcard: partial words, 100%", "episerv fin", "mode=msm&msm=100%&wildcard=true", "D1"),
             new Scenario("wildcard: upper case partial words", "EPISERV FIN", "mode=msm&msm=100%&wildcard=true", "D1"),
 
-            // --- Boolean operators are left to Find, even with every extension on
-            new Scenario("NOT excludes, full chain", "episerver NOT find", "mode=or&relevance=true&fuzzy=true&wildcard=true", "D2", "D4"),
+            // --- Upper case AND / OR / NOT: ignored by default (plain words, all toolbox features) ...
+            new Scenario("NOT ignored by default, full chain", "episerver NOT find", "mode=or&relevance=true&fuzzy=true&wildcard=true", "D1", "D2", "D3", "D4"),
+            new Scenario("AND ignored by default: pasted upper case text, 100%", "EPISERVER AND FIND", "mode=msm&msm=100%", "D1", "D2"),
+            //     ... or left to Find as operators with BooleanOperators = Respect, even with every extension on
+            new Scenario("NOT respected: excludes, full chain", "episerver NOT find", "mode=or&relevance=true&fuzzy=true&wildcard=true&booleanOperators=respect", "D2", "D4"),
 
             // --- Full README chains must not loosen MinimumShouldMatch
             new Scenario("full chain: relevance + fuzzy + wildcard", "episerver find", "mode=msm&msm=100%&relevance=true&fuzzy=true&wildcard=true", "D1", "D2"),

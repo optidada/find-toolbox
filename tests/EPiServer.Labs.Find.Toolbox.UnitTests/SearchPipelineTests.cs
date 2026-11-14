@@ -119,10 +119,10 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
         [Fact]
         public void Without_synonym_match_the_users_query_is_left_untouched()
         {
-            var search = For("cats NOT dogs").MinimumShouldMatch("2").UsingSynonymsImproved(FindSynonym);
+            var search = For("cats -dogs").MinimumShouldMatch("2").UsingSynonymsImproved(FindSynonym);
 
             var single = Assert.Single(QueryStrings(QueryJson(search)));
-            Assert.Equal("cats NOT dogs", (string)single["query"]);
+            Assert.Equal(@"cats \-dogs", (string)single["query"]);
             Assert.Equal("2", (string)single["minimum_should_match"]);
         }
 

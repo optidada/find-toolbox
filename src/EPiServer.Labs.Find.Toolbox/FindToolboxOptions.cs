@@ -10,9 +10,26 @@ namespace EPiServer.Labs.Find.Toolbox
     /// services.Configure&lt;FindToolboxOptions&gt;(o =&gt; o.MaxSynonymsPerPhrase = 5);
     /// </code>
     /// </summary>
+    /// <summary>How upper case AND / OR / NOT in the user's query are treated.</summary>
+    public enum BooleanOperatorHandling
+    {
+        /// <summary>Removed: the query is searched as plain words with all toolbox features (default).</summary>
+        Ignore,
+
+        /// <summary>Left to Find as operators; the toolbox then adds nothing to such queries.</summary>
+        Respect,
+    }
+
     [Options]
     public class FindToolboxOptions
     {
+        /// <summary>
+        /// Upper case AND / OR / NOT outside quotes. Ignore (default): removed, so pasted text such as
+        /// "TERMS AND CONDITIONS" gets synonyms, MinimumShouldMatch, fuzzy and relevance like any query.
+        /// Respect: Find treats them as operators and the toolbox leaves the query untouched.
+        /// </summary>
+        public BooleanOperatorHandling BooleanOperators { get; set; } = BooleanOperatorHandling.Ignore;
+
         // ---- Query parsing
 
         /// <summary>Max terms (and quoted phrases) taken from the user query.</summary>

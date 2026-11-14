@@ -17,6 +17,47 @@ namespace EPiServer.Labs.Find.Toolbox
         private static readonly string[] AndOrNotOperators = { "AND", "OR", "NOT" };
         private static readonly char[] TrailingPunctuation = { '.', ',', ':', '/', '-' };
 
+        /// <summary>True when the user's query uses AND / OR / NOT and the options say to respect them.</summary>
+        public static bool RespectsBooleanOperators(string rawQuery, FindToolboxOptions options)
+            => options.BooleanOperators == BooleanOperatorHandling.Respect && HasBooleanOperators(rawQuery);
+
+        /// <summary>
+        /// BooleanOperatorHandling.Ignore: replaces the main query (once) with the user's words without AND / OR / NOT, so
+        /// Find does not treat them as operators. Decided on RawQuery (what the user typed): after synonym expansion the
+        /// query text contains OR on purpose. Returns the (possibly new) main query.
+        /// </summary>
+        public static QueryStringQuery RemoveBooleanOperators(ISearchContext context, QueryStringQuery current, BoolQuery currentBoolQuery, FindToolboxOptions options)
+        {
+            var raw = GetRawQueryString(current);
+            if (options.BooleanOperators != BooleanOperatorHandling.Ignore || !HasBooleanOperators(raw)
+                || (current is MinShouldMatchQueryStringQuery msm && msm.BooleanOperatorsRemoved))
+            {
+                return current;
+            }
+
+            var terms = GetQueryPhrases(raw, options.MaxQueryTerms);
+            if (terms.Length == 0)
+            {
+                return current;
+            }
+
+            var query = new MinShouldMatchQueryStringQuery(string.Join(" ", terms.Select(SynonymExpander.EscapeTerm)));
+            CopySettings(current, query);
+            query.BooleanOperatorsRemoved = true;
+            query.IsSingleClause = query.IsSingleClause || terms.Length == 1;
+
+            if (currentBoolQuery != null && currentBoolQuery.Should.Count > 0 && ReferenceEquals(context.RequestBody.Query, currentBoolQuery))
+            {
+                currentBoolQuery.Should[0] = query;
+            }
+            else
+            {
+                context.RequestBody.Query = query;
+            }
+
+            return query;
+        }
+
         public static string[] GetQueryPhrases(string query) => GetQueryPhrases(query, FindToolboxOptions.Current.MaxQueryTerms);
 
         private static readonly Regex QuotedPhraseRegex = new Regex(@"""[^""]*""", RegexOptions.Compiled);
@@ -119,6 +160,7 @@ namespace EPiServer.Labs.Find.Toolbox
             {
                 targetMsm.MinimumShouldMatch = sourceMsm.MinimumShouldMatch;
                 targetMsm.IsSingleClause = sourceMsm.IsSingleClause;
+                targetMsm.BooleanOperatorsRemoved = sourceMsm.BooleanOperatorsRemoved;
                 targetMsm.Lenient = sourceMsm.Lenient;
                 targetMsm.QueriesForMatch = sourceMsm.QueriesForMatch;
             }

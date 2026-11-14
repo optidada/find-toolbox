@@ -26,6 +26,10 @@ namespace EPiServer.Labs.Find.Toolbox
         [JsonIgnore]
         public bool IsSingleClause { get; set; }
 
+        /// <summary>The user's AND / OR / NOT have been removed from the query text (BooleanOperatorHandling.Ignore).</summary>
+        [JsonIgnore]
+        public bool BooleanOperatorsRemoved { get; set; }
+
         [JsonProperty("minimum_should_match", NullValueHandling = NullValueHandling.Ignore)]
         public string MinimumShouldMatchForRequest => IsSingleClause ? null : MinimumShouldMatch;
 

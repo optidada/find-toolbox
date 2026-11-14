@@ -274,9 +274,12 @@ Find's `.For()` escapes almost all query syntax, so `-`, `+`, `*`, `~`, `:`, par
 (`e-mail`, `c++`, `covid-19` and `cats -dogs` are just words). Real syntax is limited to:
 
 - **Quoted phrases** (`"new york" pizza`): kept, and phrases can have synonyms too.
-- **Upper case `AND`, `OR`, `NOT`** (outside quotes): the toolbox leaves such queries exactly as Find interprets
-  them, without synonyms, relevance, fuzzy or wildcard clauses. Rewriting would drop the operators, and the extra
-  optional clauses could match documents that `NOT` excludes.
+- **Upper case `AND`, `OR`, `NOT`** (outside quotes): `FindToolboxOptions.BooleanOperators`
+  - `Ignore` (default, also in the CMS UI search providers): removed, so the query is searched as words with all
+    toolbox features. Typically pasted upper case text: `TERMS AND CONDITIONS` is searched as `terms conditions`.
+    (`RawQuery`, what statistics record, keeps the user's text.)
+  - `Respect`: Find treats them as operators and the toolbox leaves such queries exactly as Find sends them, without
+    synonyms, relevance, fuzzy or wildcard clauses (those optional clauses could match documents `NOT` excludes).
 
 ---
 
@@ -416,6 +419,7 @@ public class FindToolboxConfiguration : IConfigurableModule
 | `MinFuzzyWildcardTermLength` / `Max...` | 3 / 16 | Word length for fuzzy/wildcard |
 | `MaxFuzzyWildcardTerms` | 3 | Words that get fuzzy/wildcard |
 | `FuzzyPrefixLength` | 1 | Leading characters that must match exactly in fuzzy matching |
+| `BooleanOperators` | `Ignore` | Upper case AND / OR / NOT: `Ignore` = plain words with all toolbox features, `Respect` = Find operators, toolbox leaves the query alone |
 | `FuzzyUseLanguageField` / `WildcardUseLanguageField` | on / on | Also search the language field (stems, compound parts) when the search has a language |
 | **Boosts** | | Tuned against a live index, see the relevance tests |
 | `PhraseBoost` | 10 | Field contains the phrase/word |

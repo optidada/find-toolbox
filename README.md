@@ -170,9 +170,9 @@ Use short fields (titles, names). Phrase prefix on long text fields is costly an
 
 ### FuzzyMatch() and WildcardMatch()
 
-- `FuzzyMatch()` finds words with typos (`episervr` → `episerver`). Edit distance is Elasticsearch's AUTO
-  (1 edit for 3-5 characters, 2 above); the first 3 characters must match (`FuzzyPrefixLength`), so in practice
-  fuzzy matching starts at 4 characters.
+- `FuzzyMatch()` finds words with typos (`episervr` → `episerver`, `ait` → `air`). Edit distance is
+  Elasticsearch's AUTO (1 edit for 3-5 characters, 2 above); the first character must match (`FuzzyPrefixLength`,
+  default 1; upstream used 3, which never corrected a typo in the first three letters).
 - `WildcardMatch()` finds partial words (`episerv` → `episerver`), right side only.
 - Both use the user's words (not synonyms), only words of 3-16 characters and at most the first 3 of them, inherit
   `MinimumShouldMatch` and get a low boost (0.4 and 0.2) so exact matches rank first.
@@ -341,7 +341,7 @@ public class FindToolboxConfiguration : IConfigurableModule
 | `MinPrefixLength` | 3 | Min length for the single word prefix boost |
 | `MinFuzzyWildcardTermLength` / `Max...` | 3 / 16 | Word length for fuzzy/wildcard |
 | `MaxFuzzyWildcardTerms` | 3 | Words that get fuzzy/wildcard |
-| `FuzzyPrefixLength` | 3 | Leading characters that must match exactly in fuzzy matching |
+| `FuzzyPrefixLength` | 1 | Leading characters that must match exactly in fuzzy matching |
 | **Boosts** | | Tuned against a live index, see the relevance tests |
 | `PhraseBoost` | 10 | Field contains the phrase/word |
 | `PhrasePrefixBoost` | 5 | Field starts with the phrase |

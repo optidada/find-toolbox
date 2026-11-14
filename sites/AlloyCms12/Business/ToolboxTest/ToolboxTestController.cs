@@ -47,6 +47,11 @@ public class ToolboxTestController : ControllerBase
     [HttpPost("index-site")]
     public async Task<IActionResult> IndexSite() => _environment.IsDevelopment() ? Ok(await _service.IndexSiteAsync()) : NotFound();
 
+    /// <summary>Faceted product search as JSON (same as /product-demo).</summary>
+    [HttpGet("products")]
+    public async Task<IActionResult> Products([FromQuery] ToolboxTestHarness.ProductDemo.ProductSearchRequest request)
+        => _environment.IsDevelopment() ? Ok(await _service.ProductSearchAsync(request)) : NotFound();
+
     [HttpGet("count")]
     public async Task<IActionResult> Count() => _environment.IsDevelopment() ? Ok(await _service.CountAsync()) : NotFound();
 

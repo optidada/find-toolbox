@@ -78,7 +78,7 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
 
             // Wait until every seeded page is searchable (the index refreshes asynchronously)
             // Require the expected count several times in a row: deletes of earlier test pages are asynchronous too
-            var expected = TestDataset.Documents.Length + TestDataset.RelevanceDocuments.Length;
+            var expected = TestDataset.Documents.Length + TestDataset.RelevanceDocuments.Length + ToolboxTestHarness.ProductDemo.ProductDataset.Products.Length;
             var deadline = DateTime.UtcNow.AddSeconds(120);
             var stable = 0;
             while (true)

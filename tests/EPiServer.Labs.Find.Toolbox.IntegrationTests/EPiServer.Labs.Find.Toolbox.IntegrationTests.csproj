@@ -18,6 +18,7 @@
   <ItemGroup>
     <!-- Same dataset the sites seed -->
     <Compile Include="..\..\sites\Shared\ToolboxTestHarness\TestDataset.cs" Link="TestDataset.cs" />
+    <Compile Include="..\..\sites\Shared\ToolboxTestHarness\ProductDemo\ProductDataset.cs" Link="ProductDataset.cs" />
   </ItemGroup>
 
 </Project>

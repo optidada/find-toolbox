@@ -36,6 +36,10 @@ namespace AlloyCms11.Business.ToolboxTest
             => Request.IsLocal ? JsonContent(await Service.IndexSiteAsync()) : HttpNotFound();
 
         [HttpGet]
+        public async Task<ActionResult> Products(ToolboxTestHarness.ProductDemo.ProductSearchRequest request)
+            => Request.IsLocal ? JsonContent(await Service.ProductSearchAsync(request)) : HttpNotFound();
+
+        [HttpGet]
         public async Task<ActionResult> Count()
             => Request.IsLocal ? JsonContent(await Service.CountAsync()) : HttpNotFound();
 
@@ -63,7 +67,27 @@ namespace AlloyCms11.Business.ToolboxTest
             return JsonContent(Service.SearchWithProvider(provider, q));
         }
 
-        private ActionResult JsonContent(object value) => Content(JsonConvert.SerializeObject(value), "application/json");
+        private ActionResult JsonContent(object value) => Content(JsonConvert.SerializeObject(value, new JsonSerializerSettings
+        {
+            // camelCase property names like ASP.NET Core, but keep dictionary keys (facet values) as they are
+            ContractResolver = new Newtonsoft.Json.Serialization.DefaultContractResolver
+            {
+                NamingStrategy = new Newtonsoft.Json.Serialization.CamelCaseNamingStrategy { ProcessDictionaryKeys = false }
+            }
+        }), "application/json");
+    }
+
+    /// <summary>Faceted product search demo powered by the Find Toolbox: /product-demo?q=laptop&amp;brand=Fabrikam</summary>
+    public class ProductDemoController : Controller
+    {
+        public async Task<ActionResult> Index(ToolboxTestHarness.ProductDemo.ProductSearchRequest request)
+        {
+            var service = new ToolboxTestService(
+                ServiceLocator.Current.GetInstance<IContentRepository>(),
+                SearchClient.Instance,
+                ServiceLocator.Current.GetInstance<FindToolboxOptions>());
+            return View("~/Views/ProductDemo/Index.cshtml", await service.ProductSearchAsync(request ?? new ToolboxTestHarness.ProductDemo.ProductSearchRequest()));
+        }
     }
 
     /// <summary>Routes /toolbox-test/{action} before the CMS content routes.</summary>
@@ -73,6 +97,10 @@ namespace AlloyCms11.Business.ToolboxTest
     {
         public void Initialize(InitializationEngine context)
         {
+            RouteTable.Routes.Insert(0, new Route(
+                "product-demo",
+                new RouteValueDictionary(new { controller = "ProductDemo", action = "Index" }),
+                new MvcRouteHandler()));
             RouteTable.Routes.Insert(0, new Route(
                 "toolbox-test/{action}",
                 new RouteValueDictionary(new { controller = "ToolboxTest" }),

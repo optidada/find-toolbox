@@ -65,7 +65,7 @@ namespace AlloyCms11
                 var registerUrl = VirtualPathUtility.ToAbsolute("~/Register");
                 var path = context.RequestContext.HttpContext.Request.Path;
                 // Find Toolbox test endpoints work before an administrator is registered
-                if (IsEnabled && !path.StartsWith(registerUrl) && !path.StartsWith(VirtualPathUtility.ToAbsolute("~/toolbox-test")))
+                if (IsEnabled && !path.StartsWith(registerUrl) && !path.StartsWith(VirtualPathUtility.ToAbsolute("~/toolbox-test")) && !path.StartsWith(VirtualPathUtility.ToAbsolute("~/product-demo")))
                 {
                     context.Result = new RedirectResult(registerUrl);
                 }

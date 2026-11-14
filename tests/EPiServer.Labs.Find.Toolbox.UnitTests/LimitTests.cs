@@ -28,7 +28,7 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
             Assert.Equal(3, o.MinFuzzyWildcardTermLength);
             Assert.Equal(16, o.MaxFuzzyWildcardTermLength);
             Assert.Equal(3, o.MaxFuzzyWildcardTerms);
-            Assert.Equal(3, o.FuzzyPrefixLength);
+            Assert.Equal(1, o.FuzzyPrefixLength);
         }
 
         [Fact]
@@ -120,12 +120,12 @@ namespace EPiServer.Labs.Find.Toolbox.UnitTests
         [Fact]
         public void Fuzzy_prefix_length_comes_from_options()
         {
-            using (FindToolboxOptions.Override(new FindToolboxOptions { FuzzyPrefixLength = 1 }))
+            using (FindToolboxOptions.Override(new FindToolboxOptions { FuzzyPrefixLength = 3 }))
             {
                 var json = QueryJson(For("episerver").FuzzyMatch(x => x.Title));
                 var fuzzy = QueryStrings(json).Single(q => ((string)q["query"]).Contains("~"));
 
-                Assert.Equal(1, (int)fuzzy["fuzzy_prefix_length"]);
+                Assert.Equal(3, (int)fuzzy["fuzzy_prefix_length"]);
             }
         }
 

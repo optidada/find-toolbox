@@ -1,0 +1,154 @@
+@model ToolboxTestHarness.ProductDemo.ProductSearchResult
+@{ Layout = null; }
+@functions {
+    // Builds a link with one facet value toggled (or a setting changed), keeping everything else
+    string Link(string facet = null, string value = null, string setting = null, string settingValue = null)
+    {
+        var r = Model.Request;
+        var parts = new System.Collections.Generic.List<string>();
+        if (!string.IsNullOrEmpty(r.Q)) { parts.Add("q=" + System.Uri.EscapeDataString(r.Q)); }
+
+        foreach (var f in new[] { "category", "brand", "color", "price" })
+        {
+            var values = new System.Collections.Generic.List<string>(f == "category" ? r.Category : f == "brand" ? r.Brand : f == "color" ? r.Color : r.Price);
+            if (f == facet) { if (values.Contains(value)) { values.Remove(value); } else { values.Add(value); } }
+            foreach (var v in values) { parts.Add(f + "=" + System.Uri.EscapeDataString(v)); }
+        }
+
+        var settings = new System.Collections.Generic.Dictionary<string, string>
+        {
+            { "engine", r.Engine }, { "msm", r.Msm ?? "" },
+            { "synonyms", r.Synonyms.ToString().ToLowerInvariant() }, { "relevance", r.Relevance.ToString().ToLowerInvariant() },
+            { "fuzzy", r.Fuzzy.ToString().ToLowerInvariant() }, { "wildcard", r.Wildcard.ToString().ToLowerInvariant() },
+        };
+        if (setting != null) { settings[setting] = settingValue; }
+        foreach (var s in settings) { parts.Add(s.Key + "=" + System.Uri.EscapeDataString(s.Value ?? "")); }
+
+        return "?" + string.Join("&", parts);
+    }
+
+    bool Selected(string facet, string value)
+    {
+        var r = Model.Request;
+        var values = facet == "category" ? r.Category : facet == "brand" ? r.Brand : facet == "color" ? r.Color : r.Price;
+        return values.Contains(value);
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Find Toolbox - product search demo</title>
+    <style>
+        body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+        header { background: #0b1e3f; color: #fff; padding: 16px 32px; }
+        header h1 { margin: 0; font-size: 22px; }
+        header p { margin: 4px 0 0; opacity: .8; font-size: 13px; }
+        form.search { display: flex; gap: 8px; padding: 16px 32px; background: #fff; border-bottom: 1px solid #ddd; }
+        form.search input[type=text] { flex: 1; font-size: 18px; padding: 8px 12px; border: 1px solid #bbb; border-radius: 4px; }
+        form.search button { font-size: 16px; padding: 8px 20px; background: #0b5fff; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+        main { display: flex; gap: 24px; padding: 24px 32px; }
+        aside { width: 240px; flex-shrink: 0; }
+        aside h3 { font-size: 13px; text-transform: uppercase; color: #666; margin: 20px 0 6px; }
+        aside a { display: flex; justify-content: space-between; padding: 3px 6px; color: #222; text-decoration: none; border-radius: 3px; font-size: 14px; }
+        aside a:hover { background: #e6ecff; }
+        aside a.selected { background: #0b5fff; color: #fff; }
+        aside a.empty { color: #aaa; }
+        section.results { flex: 1; }
+        .summary { margin-bottom: 12px; color: #555; }
+        .product { background: #fff; border: 1px solid #e2e2e2; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .product h4 { margin: 0 0 4px; font-size: 16px; }
+        .product .meta { color: #666; font-size: 13px; }
+        .product .price { font-size: 18px; font-weight: 600; white-space: nowrap; }
+        .product .score { color: #999; font-size: 11px; text-align: right; }
+        .toolbox { background: #fff; border: 1px solid #e2e2e2; border-radius: 6px; padding: 12px 16px; margin-top: 24px; font-size: 13px; }
+        .toolbox a { margin-right: 10px; }
+        .toolbox .on { font-weight: 600; }
+        pre { background: #f0f2f5; padding: 10px; overflow: auto; font-size: 12px; }
+        .chips a { display: inline-block; background: #e6ecff; padding: 2px 8px; margin: 0 4px 4px 0; border-radius: 10px; text-decoration: none; color: #0b1e3f; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Product search demo</h1>
+        <p>Optimizely Search &amp; Navigation with the Find Toolbox: synonyms, MinimumShouldMatch, relevance, typo and partial word matching, multi-select facets.</p>
+    </header>
+
+    <form class="search" method="get">
+        <input type="text" name="q" value="@Model.Request.Q" placeholder="Try: laptop, notebook, tv, mobile phone, earbuds, headphnes, fabrikam camera, smart tv" autofocus />
+        <input type="hidden" name="engine" value="@Model.Request.Engine" />
+        <button type="submit">Search</button>
+    </form>
+
+    <main>
+        <aside>
+            @foreach (var facet in new[] { "category", "brand", "color", "price" })
+            {
+                <h3>@facet</h3>
+                var counts = Model.Facets.ContainsKey(facet) ? Model.Facets[facet] : new System.Collections.Generic.Dictionary<string, int>();
+                var keys = facet == "price"
+                    ? ToolboxTestHarness.ProductDemo.ProductDataset.PriceRangeKeys
+                    : counts.Keys.Union(facet == "category" ? Model.Request.Category : facet == "brand" ? Model.Request.Brand : Model.Request.Color).OrderBy(k => k).ToList();
+                foreach (var key in keys)
+                {
+                    var count = counts.ContainsKey(key) ? counts[key] : 0;
+                    <a href="@Link(facet, key)" class="@(Selected(facet, key) ? "selected" : count == 0 ? "empty" : "")"><span>@(facet == "price" ? "$" + key : key)</span><span>@count</span></a>
+                }
+            }
+        </aside>
+
+        <section class="results">
+            <div class="summary">
+                <strong>@Model.Total</strong> products
+                @if (!string.IsNullOrEmpty(Model.Request.Q)) { <text>for <em>@Model.Request.Q</em></text> }
+                <div class="chips">
+                    @foreach (var facet in new[] { "category", "brand", "color", "price" })
+                    {
+                        var values = facet == "category" ? Model.Request.Category : facet == "brand" ? Model.Request.Brand : facet == "color" ? Model.Request.Color : Model.Request.Price;
+                        foreach (var v in values)
+                        {
+                            <a href="@Link(facet, v)">@facet: @v &#x2715;</a>
+                        }
+                    }
+                </div>
+            </div>
+
+            @foreach (var hit in Model.Hits)
+            {
+                <div class="product">
+                    <div>
+                        <h4>@hit.Name</h4>
+                        <div class="meta">@hit.Category &middot; @hit.Brand &middot; @hit.Color</div>
+                    </div>
+                    <div>
+                        <div class="price">$@hit.Price.ToString("N0")</div>
+                        <div class="score">score @hit.Score.ToString("0.000")</div>
+                    </div>
+                </div>
+            }
+
+            <div class="toolbox">
+                <strong>Engine:</strong>
+                <a class="@(Model.Request.Engine == "toolbox" ? "on" : "")" href="@Link(setting: "engine", settingValue: "toolbox")">Find Toolbox</a>
+                <a class="@(Model.Request.Engine == "find" ? "on" : "")" href="@Link(setting: "engine", settingValue: "find")">plain Find (OR)</a>
+                <a class="@(Model.Request.Engine == "find-and" ? "on" : "")" href="@Link(setting: "engine", settingValue: "find-and")">plain Find (AND)</a>
+                @if (Model.Request.Engine == "toolbox")
+                {
+                    <br /><strong>Toolbox:</strong>
+                    <a href="@Link(setting: "synonyms", settingValue: (!Model.Request.Synonyms).ToString().ToLowerInvariant())">synonyms @(Model.Request.Synonyms ? "on" : "off")</a>
+                    <a href="@Link(setting: "relevance", settingValue: (!Model.Request.Relevance).ToString().ToLowerInvariant())">relevance @(Model.Request.Relevance ? "on" : "off")</a>
+                    <a href="@Link(setting: "fuzzy", settingValue: (!Model.Request.Fuzzy).ToString().ToLowerInvariant())">fuzzy @(Model.Request.Fuzzy ? "on" : "off")</a>
+                    <a href="@Link(setting: "wildcard", settingValue: (!Model.Request.Wildcard).ToString().ToLowerInvariant())">wildcard @(Model.Request.Wildcard ? "on" : "off")</a>
+                    <span>MinimumShouldMatch:</span>
+                    <a class="@(Model.Request.Msm == "2<-25%" ? "on" : "")" href="@Link(setting: "msm", settingValue: "2<-25%")">2&lt;-25%</a>
+                    <a class="@(Model.Request.Msm == "100%" ? "on" : "")" href="@Link(setting: "msm", settingValue: "100%")">100%</a>
+                    <a class="@(string.IsNullOrEmpty(Model.Request.Msm) ? "on" : "")" href="@Link(setting: "msm", settingValue: "")">off (OR)</a>
+                }
+                <pre>@Model.ToolboxChain</pre>
+                <details><summary>Query sent to Find</summary><pre>@Model.QueryJson</pre></details>
+                <p>Facet counts: each facet is counted with the filters of the other facets applied, so you can select several values in one facet.</p>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

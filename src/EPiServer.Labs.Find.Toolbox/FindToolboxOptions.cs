@@ -92,8 +92,12 @@ namespace EPiServer.Labs.Find.Toolbox
         /// <summary>Max number of terms that get fuzzy/wildcard matching.</summary>
         public int MaxFuzzyWildcardTerms { get; set; } = 3;
 
-        /// <summary>Number of leading characters that must match exactly in fuzzy matching.</summary>
-        public int FuzzyPrefixLength { get; set; } = 3;
+        /// <summary>
+        /// Number of leading characters that must match exactly in fuzzy matching. 1 (default): "ait" finds "air",
+        /// "lapotp" finds "laptop". Higher values are cheaper but never correct a typo within the first characters
+        /// (upstream used 3, which made fuzzy matching start at 4 characters).
+        /// </summary>
+        public int FuzzyPrefixLength { get; set; } = 1;
 
         // ---- CMS UI search providers (Find Toolbox - Pages / Media / Blocks)
 

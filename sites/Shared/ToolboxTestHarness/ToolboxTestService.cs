@@ -19,6 +19,7 @@ using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
+using ToolboxTestHarness.ProductDemo;
 using EPiServer.Find.UnifiedSearch;
 #if NETFRAMEWORK
 using AlloyPage = AlloyCms11.Models.Pages.ArticlePage;
@@ -99,12 +100,15 @@ namespace ToolboxTestHarness
 
             var pages = SeedPages(container, TestDataset.Documents);
             pages.AddRange(SeedPages(relevanceContainer, TestDataset.RelevanceDocuments));
+            var products = Products.SeedProducts(GetOrCreateContainer(ProductDataset.ContainerName).ContentLink);
 
             // Publishing indexes through the event queue; index explicitly so the tests do not race the queue.
 #if NETFRAMEWORK
             ContentIndexer.Instance.Index(pages);
+            ContentIndexer.Instance.Index(products);
 #else
             await ContentIndexer.Instance.IndexAsync(pages);
+            await ContentIndexer.Instance.IndexAsync(products);
 #endif
 
             await SeedSynonymsAsync();
@@ -194,15 +198,18 @@ namespace ToolboxTestHarness
         /// <summary>Number of seeded test pages that are searchable (no query string involved).</summary>
         public async Task<object> CountAsync()
         {
-            var containers = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName }.Select(GetOrCreateContainer).ToList();
+            var containers = new[] { TestDataset.ContainerName, TestDataset.RelevanceContainerName, ProductDataset.ContainerName }.Select(GetOrCreateContainer).ToList();
             var containerIds = containers.Select(c => c.ContentLink.ID.ToString(CultureInfo.InvariantCulture)).ToList();
             var currentIds = containers.SelectMany(c => _contentRepository.GetChildren<IContent>(c.ContentLink))
                                        .Select(c => c.ContentLink.ID)
                                        .ToList();
 
-            var all = _client.Search<AlloyPage>(EPiServer.Find.Language.English)
+            var all = _client.Search<PageData>(EPiServer.Find.Language.English)
                              .Filter(x => x.Ancestors().In(containerIds))
                              .Filter(x => !x.Name.Match(CacheBuster()))
+                             .Filter(x => x.MatchTypeHierarchy(typeof(AlloyPage)) | x.MatchTypeHierarchy(typeof(DemoProductPage)))
+                             // a product only counts once its facet fields are indexed (re-indexing after a model change lags)
+                             .Filter(x => !x.MatchTypeHierarchy(typeof(DemoProductPage)) | ((DemoProductPage)x).ProductCategory.Exists())
                              .Select(x => x.ContentLink.ID)
                              .Take(1000);
             var indexedIds = (await GetResultAsync(all)).ToList();
@@ -221,13 +228,14 @@ namespace ToolboxTestHarness
             var tags = new[] { "language:" + TestDataset.Language };
 
             var existing = await ListSynonymsAsync(1000, tags);
-            var testPhrases = new HashSet<string>(TestDataset.Synonyms.Select(s => s.Phrase), StringComparer.OrdinalIgnoreCase);
+            var all = TestDataset.Synonyms.Concat(ProductDataset.Synonyms).ToList();
+            var testPhrases = new HashSet<string>(all.Select(s => s.Phrase), StringComparer.OrdinalIgnoreCase);
             var current = existing.Where(s => testPhrases.Contains(s.Phrase)).ToList();
 
             // Idempotent: both test sites share the index, so do not touch the synonyms when they are already right
             // (deleting and re-adding them would briefly remove them while the other site's tests run).
             bool Same(Synonym s, TestDataset.TestSynonym t) => s.Phrase == t.Phrase && s.SynonymPhrase == t.Synonym && s.Bidirectional == t.Bidirectional;
-            if (current.Count == TestDataset.Synonyms.Length && TestDataset.Synonyms.All(t => current.Any(s => Same(s, t))))
+            if (current.Count == all.Count && all.All(t => current.Any(s => Same(s, t))))
             {
                 return;
             }
@@ -237,7 +245,7 @@ namespace ToolboxTestHarness
                 await DeleteSynonymAsync(synonym.Id);
             }
 
-            foreach (var synonym in TestDataset.Synonyms)
+            foreach (var synonym in all)
             {
                 await AddSynonymAsync(new Synonym(synonym.Phrase, synonym.Synonym, synonym.Bidirectional));
             }
@@ -409,6 +417,12 @@ namespace ToolboxTestHarness
 
             return search;
         }
+
+        private ProductSearchService Products => new ProductSearchService(_contentRepository, _client);
+
+        /// <summary>Faceted product search (/product-demo and /toolbox-test/products).</summary>
+        public Task<ProductSearchResult> ProductSearchAsync(ProductSearchRequest request)
+            => Products.SearchAsync(request, GetOrCreateContainer(ProductDataset.ContainerName).ContentLink);
 
         /// <summary>Indexes all site content (e.g. the Alloy demo pages) so the site's search page has something to find.</summary>
         public async Task<object> IndexSiteAsync()

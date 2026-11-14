@@ -13,8 +13,9 @@ using System.Linq;
 
 namespace EPiServer.Labs.Find.Toolbox
 {
-    [ServiceConfiguration(Lifecycle = ServiceInstanceScope.Singleton)]
-    public class SynonymLoader
+    [ServiceConfiguration(typeof(ISynonymProvider), Lifecycle = ServiceInstanceScope.Singleton)]
+    [ServiceConfiguration(typeof(SynonymLoader), Lifecycle = ServiceInstanceScope.Singleton)]
+    public class SynonymLoader : ISynonymProvider
     {
         private readonly IClient _client;
         private readonly IStatisticTagsHelper _statisticTagsHelper;
@@ -46,6 +47,11 @@ namespace EPiServer.Labs.Find.Toolbox
                 return synonymsCached;
             }
 
+            if (!HasAdminIndex())
+            {
+                return new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            }
+
             var loadedSynonyms = LoadSynonymsFromSourceIndex(synonymBatchSize, statisticLanguageTags).ToList();
             var synonymDictionary = CreateSynonymDictionary(loadedSynonyms);
 
@@ -56,6 +62,25 @@ namespace EPiServer.Labs.Find.Toolbox
 
             log.Debug("Loaded {0} synonyms from index (cache duration: {1}) for tags {2}", loadedSynonyms.Count, cacheDuration, string.Join(",", statisticLanguageTags));
             return synonymDictionary;
+        }
+
+        private bool HasAdminIndex()
+        {
+            try
+            {
+                if (_client.Settings.Admin)
+                {
+                    return true;
+                }
+
+                log.Warning("Your index lacks an admin index, synonyms can not be loaded. Please contact support.");
+            }
+            catch (Exception ex)
+            {
+                log.Error("Could not read index settings, synonyms will not be used.", ex);
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -93,10 +118,11 @@ namespace EPiServer.Labs.Find.Toolbox
                     page++;
                     retries = 0;
                 }
-                catch
+                catch (Exception ex)
                 {
                     //Attempt a few retries
                     retries++;
+                    log.Warning(string.Format("Failed to load synonyms (attempt {0})", retries), ex);
                     if (retries > 2) // Bail out if on 3 failed attempts
                     {
                         break;
@@ -114,9 +140,9 @@ namespace EPiServer.Labs.Find.Toolbox
         /// For every multiple term we generate a new quoted variant
         /// </summary>
         /// <returns></returns>
-        private Dictionary<string, HashSet<string>> CreateSynonymDictionary(IEnumerable<Synonym> loadedSynonyms)
+        internal static Dictionary<string, HashSet<string>> CreateSynonymDictionary(IEnumerable<Synonym> loadedSynonyms)
         {
-            var synonymsFlattened = new Dictionary<string, HashSet<string>>();
+            var synonymsFlattened = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var synonym in loadedSynonyms)
             {
 
@@ -153,15 +179,20 @@ namespace EPiServer.Labs.Find.Toolbox
 
         private static void AddSynonym(string phrase, string synonym, ref Dictionary<string, HashSet<string>> synonyms)
         {
-            if (synonyms.TryGetValue(phrase, out HashSet<string> existingSynonym))
+            phrase = phrase?.Trim().ToLowerInvariant();
+            synonym = synonym?.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(phrase) || string.IsNullOrEmpty(synonym) || phrase == synonym)
             {
-                existingSynonym.Add(synonym.ToLowerInvariant());
-                synonyms[phrase] = existingSynonym;
+                return;
             }
-            else
+
+            if (!synonyms.TryGetValue(phrase, out HashSet<string> existingSynonyms))
             {
-                synonyms.Add(phrase, new HashSet<string>() { synonym });
+                existingSynonyms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                synonyms.Add(phrase, existingSynonyms);
             }
+
+            existingSynonyms.Add(synonym);
         }
 
         private static bool ContainsMultipleTerms(string text)

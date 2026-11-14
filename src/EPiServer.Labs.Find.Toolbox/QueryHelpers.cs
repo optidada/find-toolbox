@@ -1,4 +1,4 @@
-﻿using EPiServer.Find;
+using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
 using System.Linq;
@@ -8,18 +8,30 @@ namespace EPiServer.Labs.Find.Toolbox
 {
     public static class QueryHelpers
     {
-        public static readonly Regex SpaceTabsRegex = new Regex(@"/\\s+/", RegexOptions.Compiled);
-        public static readonly Regex TermsAndQuotedTermsRegex = new Regex(@"([\d\.\,]+)|([\w\-&´'`\.\/:]+)|([""][\s\w\-&´'`\.\/\:]+[""])", RegexOptions.Compiled);
+        public static readonly Regex SpaceTabsRegex = new Regex(@"\s+", RegexOptions.Compiled);
+        // Quoted phrases | numbers with separators (1,5 / 2.0.1) | terms. Terms may start with a dot (.net)
+        // and contain - & ´ ' ` . / : # + (c#, c++, s&n, e-mail, asp.net).
+        public static readonly Regex TermsAndQuotedTermsRegex = new Regex(@"(""[^""]+"")|(\d[\d\.\,]*\d)|(\.?\w[\w\-&´'`\.\/:#\+]*)", RegexOptions.Compiled);
+
+        private static readonly string[] AndOrNotOperators = { "AND", "OR", "NOT" };
+        private static readonly char[] TrailingPunctuation = { '.', ',', ':', '/', '-' };
 
         public static string[] GetQueryPhrases(string query)
         {
-            string[] AndOrNotOperators = new string[] { "AND", "OR", "NOT" };
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return new string[0];
+            }
 
             // Replace double space, tabs with single whitespace and trim space on side
             string cleanedQuery = SpaceTabsRegex.Replace(query, " ").Trim();
 
-            // Match single terms and quoted terms, allow -&´'` in terms, allow ., in numerics, allow space between quotes and word.
-            return TermsAndQuotedTermsRegex.Matches(cleanedQuery).Cast<Match>().Select(c => c.Value.Trim()).Where(x => !AndOrNotOperators.Contains(x)).Take(50).ToArray();
+            return TermsAndQuotedTermsRegex.Matches(cleanedQuery).Cast<Match>()
+                .Select(c => c.Value.Trim())
+                .Select(t => t.StartsWith("\"") ? SpaceTabsRegex.Replace(t, " ") : t.TrimEnd(TrailingPunctuation))
+                .Where(t => t.Length > 0 && !AndOrNotOperators.Contains(t))
+                .Take(50)
+                .ToArray();
         }
 
         public static bool GetFirstQueryStringQuery(ISearchContext context, out IQuery query, out BoolQuery boolQuery)
@@ -53,17 +65,49 @@ namespace EPiServer.Labs.Find.Toolbox
 
         public static string GetRawQueryString(IQuery query)
         {
-            return ((query as QueryStringQuery).RawQuery ?? string.Empty).ToString();
+            return (query as QueryStringQuery)?.RawQuery?.ToString() ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Copies all query_string settings (fields, analyzer, operators, ...) from <paramref name="source"/> to <paramref name="target"/>.
+        /// </summary>
+        public static void CopySettings(QueryStringQuery source, MultiFieldQueryStringQuery target)
+        {
+            target.RawQuery = source.RawQuery;
+            target.AllowLeadingWildcard = source.AllowLeadingWildcard;
+            target.AnalyzeWildcard = source.AnalyzeWildcard;
+            target.Analyzer = source.Analyzer;
+            target.AutoGeneratePhraseQueries = source.AutoGeneratePhraseQueries;
+            target.Boost = source.Boost;
+            target.DefaultOperator = source.DefaultOperator;
+            target.EnablePositionIncrements = source.EnablePositionIncrements;
+            target.FuzzyMinSim = source.FuzzyMinSim;
+            target.FuzzyPrefixLength = source.FuzzyPrefixLength;
+            target.LowercaseExpandedTerms = source.LowercaseExpandedTerms;
+            target.PhraseSlop = source.PhraseSlop;
+            target.DefaultField = source.DefaultField;
+
+            if (source is MultiFieldQueryStringQuery multiField && multiField.Fields != null)
+            {
+                target.Fields = multiField.Fields.ToList();
+            }
+
+            if (source is MinShouldMatchQueryStringQuery sourceMsm && target is MinShouldMatchQueryStringQuery targetMsm)
+            {
+                targetMsm.MinimumShouldMatch = sourceMsm.MinimumShouldMatch;
+                targetMsm.Lenient = sourceMsm.Lenient;
+                targetMsm.QueriesForMatch = sourceMsm.QueriesForMatch;
+            }
         }
 
         public static bool IsStringQuoted(string text)
         {
-            return text.StartsWith("\"") && text.EndsWith("\"");
+            return text != null && text.Length >= 2 && text.StartsWith("\"") && text.EndsWith("\"");
         }
 
         public static bool IsStringParenthesized(string text)
         {
-            return text.StartsWith("(") && text.EndsWith(")");
+            return text != null && text.Length >= 2 && text.StartsWith("(") && text.EndsWith(")");
         }
 
     }

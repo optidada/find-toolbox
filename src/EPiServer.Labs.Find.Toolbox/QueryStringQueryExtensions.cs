@@ -1,4 +1,3 @@
-﻿using Castle.Core.Internal;
 using EPiServer.Find;
 using EPiServer.Find.Api.Querying;
 using EPiServer.Find.Api.Querying.Queries;
@@ -40,26 +39,23 @@ namespace EPiServer.Labs.Find.Toolbox
         {
             return new Search<TSource, MinShouldMatchQueryStringQuery>(search, context =>
             {
-                var originalQuery = (QueryStringQuery)context.RequestBody.Query;
-                var query = new MinShouldMatchQueryStringQuery(originalQuery.Query);
-                query.RawQuery = originalQuery.RawQuery;
-                query.AllowLeadingWildcard = originalQuery.AllowLeadingWildcard;
-                query.AnalyzeWildcard = originalQuery.AnalyzeWildcard;
-                query.Analyzer = originalQuery.Analyzer;
-                query.AutoGeneratePhraseQueries = originalQuery.AutoGeneratePhraseQueries;
-                query.Boost = originalQuery.Boost;
-                query.DefaultOperator = originalQuery.DefaultOperator;
-                query.EnablePositionIncrements = originalQuery.EnablePositionIncrements;
-                query.FuzzyMinSim = originalQuery.FuzzyMinSim;
-                query.FuzzyPrefixLength = originalQuery.FuzzyPrefixLength;
-                query.LowercaseExpandedTerms = originalQuery.LowercaseExpandedTerms;
-                query.PhraseSlop = originalQuery.PhraseSlop;
-                query.DefaultField = originalQuery.DefaultField;
-                if (context.RequestBody.Query is MultiFieldQueryStringQuery multiFieldQuery)
+                if (!QueryHelpers.GetFirstQueryStringQuery(context, out IQuery currentQuery, out BoolQuery currentBoolQuery))
                 {
-                    query.Fields = multiFieldQuery.Fields;
+                    Trace.Instance.Add(new TraceEvent(search, "MinimumShouldMatch() relies on a QueryStringQuery, i.e. with the use of the .For() -extensions.") { IsError = false });
+                    return;
                 }
+
+                var originalQuery = (QueryStringQuery)currentQuery;
+                var query = new MinShouldMatchQueryStringQuery(originalQuery.Query);
+                QueryHelpers.CopySettings(originalQuery, query);
                 query.MinimumShouldMatch = minMatch;
+                query.DefaultOperator = BooleanOperator.Or;
+
+                if (ReferenceEquals(context.RequestBody.Query, currentBoolQuery) && currentBoolQuery.Should.Count > 0)
+                {
+                    currentBoolQuery.Should[0] = query;
+                    return;
+                }
 
                 context.RequestBody.Query = query;
                 log.Debug("Added MinimumShouldMatch to search");
@@ -93,19 +89,26 @@ namespace EPiServer.Labs.Find.Toolbox
 
                 IEnumerable<string> queriesForMatch = null;
 
-                // If .UsingImprovedSynonyms() was used we use queriesForMatch instead of the Query
-                if ((currentQuery as MinShouldMatchQueryStringQuery).QueriesForMatch.IsNotNull())
+                // If .UsingSynonymsImproved() was used we use QueriesForMatch (original + synonym variations) instead of the raw query
+                if (currentQuery is MinShouldMatchQueryStringQuery msmQuery && msmQuery.QueriesForMatch != null && msmQuery.QueriesForMatch.Length > 0)
                 {
-                    queriesForMatch = (currentQuery as MinShouldMatchQueryStringQuery).QueriesForMatch;
+                    queriesForMatch = msmQuery.QueriesForMatch;
                 }
                 else
                 {
-                    queriesForMatch = new string[] { QueryHelpers.GetRawQueryString(currentQuery) };
+                    queriesForMatch = new[] { string.Join(" ", QueryHelpers.GetQueryPhrases(QueryHelpers.GetRawQueryString(currentQuery))) };
                 }
 
 
-                foreach (var query in queriesForMatch)
+                foreach (var queryForMatch in queriesForMatch)
                 {
+                    // match_phrase / match_phrase_prefix / prefix are not query_string queries: no escaping, no quotes
+                    var query = queryForMatch.Replace("\"", string.Empty).Trim();
+                    if (query.Length == 0)
+                    {
+                        continue;
+                    }
+
                     var terms = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);                    
 
                     foreach (var fieldSelector in fieldSelectors)
@@ -116,15 +119,15 @@ namespace EPiServer.Labs.Find.Toolbox
                         // Create PrefixQuery for single term queries longer  than 1 character
                         if (terms.Count() == 1 && terms.First().Length > 1)
                         {
-                            var prefixQuery = new PrefixQuery(fieldNameLowercase, query.ToLower().Quote()) { Boost = PREFIXQUERY_DEFAULT_BOOST };
+                            var prefixQuery = new PrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = PREFIXQUERY_DEFAULT_BOOST };
                             newBoolQuery.Should.Add(prefixQuery);
                         }
 
                         // Create PhraseQuery and PhrasePrefixQuery for multiple term queries where any term is longer than 1 character                                             
                         if (terms.Count() > 1 && terms.Any(x => x.Length > 1))
                         {
-                            var phraseQuery = new PhraseQuery(fieldNameAnalyzed, query.Quote()) { Boost = PHRASEQUERY_DEFAULT_BOOST };
-                            var phrasePrefixQuery = new PhrasePrefixQuery(fieldNameLowercase, query.ToLower().Quote()) { Boost = PHRASEPREFIXQUERY_DEFAULT_BOOST };
+                            var phraseQuery = new PhraseQuery(fieldNameAnalyzed, query) { Boost = PHRASEQUERY_DEFAULT_BOOST };
+                            var phrasePrefixQuery = new PhrasePrefixQuery(fieldNameLowercase, query.ToLowerInvariant()) { Boost = PHRASEPREFIXQUERY_DEFAULT_BOOST };
                             newBoolQuery.Should.Add(phraseQuery);
                             newBoolQuery.Should.Add(phrasePrefixQuery);
                         }
@@ -205,7 +208,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 {
                     Fields = fieldNames,
                     DefaultOperator = (currentQuery as QueryStringQuery).DefaultOperator,
-                    MinimumShouldMatch = currentQuery is MinShouldMatchQueryStringQuery minShouldMatchQueryStringQuery ? minShouldMatchQueryStringQuery.MinimumShouldMatch : "100%",
+                    MinimumShouldMatch = (currentQuery as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch,
                     FuzzyPrefixLength = 3,
                     Boost = boost
                 };
@@ -285,7 +288,7 @@ namespace EPiServer.Labs.Find.Toolbox
                 {
                     Fields = fieldNames,
                     DefaultOperator = (currentQuery as QueryStringQuery).DefaultOperator,
-                    MinimumShouldMatch = currentQuery is MinShouldMatchQueryStringQuery minShouldMatchQueryStringQuery ? minShouldMatchQueryStringQuery.MinimumShouldMatch : "100%",
+                    MinimumShouldMatch = (currentQuery as MinShouldMatchQueryStringQuery)?.MinimumShouldMatch,
                     Boost = boost
                 };
 
@@ -321,22 +324,11 @@ namespace EPiServer.Labs.Find.Toolbox
             {
                 var originalQuery = (QueryStringQuery)context.RequestBody.Query;
                 query = new MultiFieldQueryStringQuery(originalQuery.Query);
-                query.RawQuery = originalQuery.RawQuery;
+                QueryHelpers.CopySettings(originalQuery, query);
                 if (originalQuery.DefaultField.IsNotNull())
                 {
                     query.Fields.Add(originalQuery.DefaultField);
                 }
-                query.AllowLeadingWildcard = originalQuery.AllowLeadingWildcard;
-                query.AnalyzeWildcard = originalQuery.AnalyzeWildcard;
-                query.Analyzer = originalQuery.Analyzer;
-                query.AutoGeneratePhraseQueries = originalQuery.AutoGeneratePhraseQueries;
-                query.Boost = originalQuery.Boost;
-                query.DefaultOperator = originalQuery.DefaultOperator;
-                query.EnablePositionIncrements = originalQuery.EnablePositionIncrements;
-                query.FuzzyMinSim = originalQuery.FuzzyMinSim;
-                query.FuzzyPrefixLength = originalQuery.FuzzyPrefixLength;
-                query.LowercaseExpandedTerms = originalQuery.LowercaseExpandedTerms;
-                query.PhraseSlop = originalQuery.PhraseSlop;
             }
 
             if (relativeImportance != null)

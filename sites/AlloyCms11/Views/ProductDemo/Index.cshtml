@@ -17,7 +17,7 @@
 
         var settings = new System.Collections.Generic.Dictionary<string, string>
         {
-            { "engine", r.Engine }, { "msm", r.Msm ?? "" },
+            { "engine", r.Engine }, { "lang", r.Lang }, { "msm", r.Msm ?? "" },
             { "synonyms", r.Synonyms.ToString().ToLowerInvariant() }, { "relevance", r.Relevance.ToString().ToLowerInvariant() },
             { "fuzzy", r.Fuzzy.ToString().ToLowerInvariant() }, { "wildcard", r.Wildcard.ToString().ToLowerInvariant() },
         };
@@ -77,6 +77,7 @@
     <form class="search" method="get">
         <input type="text" name="q" value="@Model.Request.Q" placeholder="Try: laptop, notebook, tv, mobile phone, earbuds, headphnes, fabrikam camera, smart tv" autofocus />
         <input type="hidden" name="engine" value="@Model.Request.Engine" />
+        <input type="hidden" name="lang" value="@Model.Request.Lang" />
         <button type="submit">Search</button>
     </form>
 
@@ -132,6 +133,10 @@
                 <a class="@(Model.Request.Engine == "toolbox" ? "on" : "")" href="@Link(setting: "engine", settingValue: "toolbox")">Find Toolbox</a>
                 <a class="@(Model.Request.Engine == "find" ? "on" : "")" href="@Link(setting: "engine", settingValue: "find")">plain Find (OR)</a>
                 <a class="@(Model.Request.Engine == "find-and" ? "on" : "")" href="@Link(setting: "engine", settingValue: "find-and")">plain Find (AND)</a>
+                <br /><strong>Language (field suffix + analyzer):</strong>
+                <a class="@(Model.Request.Lang == "en" ? "on" : "")" href="@Link(setting: "lang", settingValue: "en")">English (.en)</a>
+                <a class="@(Model.Request.Lang == "sv" ? "on" : "")" href="@Link(setting: "lang", settingValue: "sv")">Swedish (.sv)</a>
+                <a class="@(Model.Request.Lang == "none" ? "on" : "")" href="@Link(setting: "lang", settingValue: "none")">none (standard)</a>
                 @if (Model.Request.Engine == "toolbox")
                 {
                     <br /><strong>Toolbox:</strong>

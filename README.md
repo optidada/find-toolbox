@@ -99,6 +99,44 @@ improved synonyms also rank synonym matches below the user's own words and have 
 
 Compare on the test sites: `/toolbox-test/search?q=episerver find&mode=and&unified=true&builtinSynonyms=true`.
 
+### Does it actually search better? Measured
+
+The product demo (`/product-demo`, 40 products, synonyms `laptop <=> notebook`, `tv <=> television`,
+`mobile phone <=> smartphone`, `earbuds => headphones`) was searched with 19 realistic queries, each with a judged set
+of relevant products, using three engines on the same fields: plain Find with its built-in `UsingSynonyms()` and OR
+or AND, and the Find Toolbox chain from [Quick start](#quick-start). Same results on CMS 11 + Find 13.6.1 and
+CMS 12 + Find 17.1.
+
+| | Find, OR | Find, AND | **Find Toolbox** |
+|---|---|---|---|
+| Recall (share of relevant products found) | 84% | 76% | **95%** |
+| Precision (share of returned products that are relevant) | 42% | 64% | **95%** |
+| Mean reciprocal rank (is the first hit relevant?) | 0.74 | 0.72 | **1.00** |
+| Queries with no hits | 3 | 4 | **0** |
+| Queries answered perfectly (all relevant, nothing else) | 5 / 19 | 10 / 19 | **15 / 19** |
+
+Where the difference comes from:
+
+| Query | Find, OR | Find, AND | Find Toolbox |
+|---|---|---|---|
+| `fabrikam laptop` | 16 hits (all Fabrikam + all laptops) | 16 hits | **the 2 Fabrikam laptops** |
+| `gaming laptop` | 9 hits, the gaming laptop 2nd | 9 hits | **1 hit** |
+| `northwind tv` | 16 hits, first relevant 4th | 16 hits | 10 hits, **first hit relevant** |
+| `mobile phone` | 8 (incl. the flip phone) | 3 of 7 | **7 of 7** |
+| `fabrikam camra` (typo) | 10 hits, first relevant 4th | 0 | **the 2 Fabrikam cameras** |
+| `headphnes` (typo) | 0 | 0 | **5 of 7** |
+| `televisoin` (typo) | 0 | 0 | **3 of 8** |
+| `cam` (partial word) | 0 | 0 | **8 of 8 cameras** |
+
+Simple one word synonyms work in all three. The gains are `MinimumShouldMatch` working together with synonyms
+(OR finds too much, AND too little), typos and partial words, and ranking the best match first.
+
+Remaining misses: a typo in a word that has synonyms only finds the documents with the corrected word itself
+(`televisoin` finds the "TV"s but not the "Television"s), fuzzy and wildcard do not combine with synonyms; and words
+written apart (`note book`) do not find compounds (`notebook`) unless the language analyzer decompounds.
+
+Run it yourself: `python scratch/evaluate.py`-style comparisons are easy with `/toolbox-test/products?q=...&engine=find|find-and|toolbox`.
+
 ### MinimumShouldMatch()
 
 How many of the query's terms a document must contain. A middle ground between OR (too many hits) and AND (no hits).

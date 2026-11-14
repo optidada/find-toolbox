@@ -113,6 +113,12 @@ namespace ToolboxTestHarness.ProductDemo
         public List<string> Color { get; set; } = new List<string>();
         /// <summary>Price range keys, see <see cref="ProductDataset.PriceRanges"/>.</summary>
         public List<string> Price { get; set; } = new List<string>();
+        /// <summary>
+        /// Search language: en (default) | sv | none. Picks the language specific field suffix (.en / .sv) and analyzer
+        /// (stemming, decompounding) Find uses for the search.
+        /// </summary>
+        public string Lang { get; set; } = "en";
+
         /// <summary>toolbox (default) | find (plain Find: For + built-in UsingSynonyms, OR) | find-and (the same with AND)</summary>
         public string Engine { get; set; } = "toolbox";
         public string Msm { get; set; } = "2<-25%";

@@ -230,8 +230,13 @@ namespace ToolboxTestHarness.ProductDemo
         /// <summary>The query (with the toolbox) and the container filter, without facet filters.</summary>
         private ITypeSearch<DemoProductPage> BaseSearch(ProductSearchRequest request, string containerId, List<string> chain)
         {
-            ITypeSearch<DemoProductPage> search = _client.Search<DemoProductPage>(EPiServer.Find.Language.English);
-            chain.Add("client.Search<DemoProductPage>(Language.English)");
+            var language = request.Lang == "sv" ? EPiServer.Find.Language.Swedish
+                         : request.Lang == "none" ? EPiServer.Find.Language.None
+                         : EPiServer.Find.Language.English;
+            var languageName = request.Lang == "sv" ? "Language.Swedish" : request.Lang == "none" ? "Language.None" : "Language.English";
+
+            ITypeSearch<DemoProductPage> search = _client.Search<DemoProductPage>(language);
+            chain.Add("client.Search<DemoProductPage>(" + languageName + ")");
 
             if (!string.IsNullOrWhiteSpace(request.Q))
             {

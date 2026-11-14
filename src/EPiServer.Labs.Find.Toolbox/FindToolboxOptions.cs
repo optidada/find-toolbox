@@ -43,6 +43,12 @@ namespace EPiServer.Labs.Find.Toolbox
         /// </summary>
         public int MaxSynonymPhraseTerms { get; set; } = 10;
 
+        /// <summary>
+        /// Look synonyms up by word stem too (Snowball stemmer for the search's language), so "notebooks" finds the
+        /// synonyms of "notebook" and "koppar" those of "kopp". Exact matches are tried first.
+        /// </summary>
+        public bool StemSynonymLookup { get; set; } = true;
+
         /// <summary>Max synonyms added for one matched phrase, e.g. (find OR s1 OR ... OR s10).</summary>
         public int MaxSynonymsPerPhrase { get; set; } = 10;
 

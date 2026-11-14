@@ -59,7 +59,9 @@ namespace EPiServer.Labs.Find.Toolbox
                     return;
                 }
 
-                var expansion = SynonymExpander.Expand(terms, _synonymProvider.GetSynonyms(cacheDuration), _options);
+                var expansion = SynonymExpander.Expand(terms, _synonymProvider.GetSynonyms(cacheDuration), _options,
+                    stem: _options.StemSynonymLookup ? SynonymStemming.For(context.ContentLanguage) : null,
+                    languageKey: context.ContentLanguage?.FieldSuffix);
 
                 // Without synonym matches the user's query is left untouched (including any operators),
                 // we only record the match variations for UsingRelevanceImproved().

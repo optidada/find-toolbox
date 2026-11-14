@@ -134,6 +134,7 @@ Simple one word synonyms work in all three. The gains are `MinimumShouldMatch` w
 Remaining misses: a typo in a word that has synonyms only finds the documents with the corrected word itself
 (`televisoin` finds the "TV"s but not the "Television"s), fuzzy and wildcard do not combine with synonyms; and words
 written apart (`note book`) do not find compounds (`notebook`) unless the language analyzer decompounds.
+(Plurals of synonym words, like `notebooks`, are covered since synonyms are also looked up by stem.)
 
 Reproduce: start the test sites and run `python tests/evaluation/evaluate_product_search.py`, or compare single
 queries with `/toolbox-test/products?q=...&engine=find|find-and|toolbox`.
@@ -203,6 +204,9 @@ What that gives you:
   `episerver` **and** (`find` **or** `search navigation`). Upstream 2.x sent the synonyms as a separate OR'ed
   clause, which let documents through that only matched the synonym.
 - **AND stays AND.** `.WithAndAsDefaultOperator()` is kept (1.x turned it into OR when used with synonyms).
+- **Plurals and inflections find the synonyms too**: synonyms are also looked up by word stem (Snowball stemmer for
+  the search's language), so `notebooks` uses the synonyms of `notebook` and Swedish `koppar` those of `kopp`
+  (`StemSynonymLookup`, default on; needs a language on the search).
 - **Multi-word synonyms require all their words** (`search AND navigation`), in any order.
 - **Bidirectional** synonyms and **multi-word phrases** work (`new york <=> nyc`), longest phrase first, no
   overlapping expansions, case-insensitive (`Colour` in the Find UI matches `colour`).
@@ -411,6 +415,7 @@ public class FindToolboxConfiguration : IConfigurableModule
 | **Limits** | | Keep queries from expanding too much |
 | `MaxQueryTerms` | 50 | Terms taken from the user query |
 | `MaxSynonymPhraseTerms` | 10 | Longest synonym phrase looked up (bounded by the longest phrase in your list) |
+| `StemSynonymLookup` | on | Also look synonyms up by word stem (Snowball, the search's language): `notebooks` => synonyms of `notebook` |
 | `MaxSynonymsPerPhrase` | 10 | Synonyms added for one matched phrase |
 | `MaxExpandedPhrases` | 5 | Phrases expanded per query; later matches stay unexpanded |
 | `MaxQueriesForMatch` | 3 | Query variations (original + synonyms) used by `UsingRelevanceImproved()` |

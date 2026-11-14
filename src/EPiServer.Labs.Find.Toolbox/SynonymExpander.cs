@@ -57,6 +57,13 @@ namespace EPiServer.Labs.Find.Toolbox
         /// Lookups are case insensitive. Expansion is bounded by <paramref name="options"/> (defaults: <see cref="FindToolboxOptions"/>).
         /// </summary>
         public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>> synonyms, FindToolboxOptions options = null)
+            => Expand(terms, synonyms, options, stem: null, languageKey: null);
+
+        /// <summary>
+        /// As <see cref="Expand(string[], IDictionary{string, HashSet{string}}, FindToolboxOptions)"/>, also matching synonyms
+        /// by word stem when <paramref name="stem"/> is given (see <see cref="SynonymStemming"/>).
+        /// </summary>
+        public static SynonymExpansion Expand(string[] terms, IDictionary<string, HashSet<string>> synonyms, FindToolboxOptions options, Func<string, string> stem, string languageKey)
         {
             if (terms == null) throw new ArgumentNullException(nameof(terms));
             options = options ?? FindToolboxOptions.Defaults;
@@ -78,7 +85,7 @@ namespace EPiServer.Labs.Find.Toolbox
                     for (var length = Math.Min(maxPhraseTerms, terms.Length - i); length >= 1; length--)
                     {
                         var phrase = string.Join(" ", terms, i, length);
-                        if (!TryGetSynonyms(synonyms, phrase, out var allSynonyms))
+                        if (!TryGetSynonyms(synonyms, phrase, stem, languageKey, out var allSynonyms))
                         {
                             continue;
                         }
@@ -118,14 +125,21 @@ namespace EPiServer.Labs.Find.Toolbox
                 : d.Keys.Max(k => k.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length));
         }
 
-        private static bool TryGetSynonyms(IDictionary<string, HashSet<string>> synonyms, string phrase, out HashSet<string> matchingSynonyms)
+        private static bool TryGetSynonyms(IDictionary<string, HashSet<string>> synonyms, string phrase, Func<string, string> stem, string languageKey, out HashSet<string> matchingSynonyms)
         {
-            if (synonyms.TryGetValue(phrase, out matchingSynonyms))
+            if (synonyms.TryGetValue(phrase, out matchingSynonyms) || synonyms.TryGetValue(phrase.ToLowerInvariant(), out matchingSynonyms))
             {
                 return true;
             }
 
-            return synonyms.TryGetValue(phrase.ToLowerInvariant(), out matchingSynonyms);
+            if (stem == null)
+            {
+                return false;
+            }
+
+            // By stem: notebooks => notebook, koppar => kopp. The synonyms themselves are added as written in the list.
+            var stemmedIndex = SynonymStemming.StemmedIndex(synonyms, languageKey ?? string.Empty, stem);
+            return stemmedIndex.TryGetValue(SynonymStemming.StemPhrase(phrase, stem), out matchingSynonyms);
         }
 
         /// <summary>

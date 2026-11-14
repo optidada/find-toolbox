@@ -91,6 +91,13 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
         [InlineData("cms12", "television", 8)]
         [InlineData("cms12", "mobile phone", 7)]
         [InlineData("cms12", "smartphone", 7)]
+        // plurals: synonyms are looked up by word stem (Snowball, the search language)
+        [InlineData("cms11", "notebooks", 8)]
+        [InlineData("cms11", "televisions", 8)]
+        [InlineData("cms11", "smartphones", 7)]
+        [InlineData("cms12", "notebooks", 8)]
+        [InlineData("cms12", "televisions", 8)]
+        [InlineData("cms12", "smartphones", 7)]
         public async Task Synonyms_in_both_directions(string site, string query, int expected)
         {
             var result = await Search(site, Q(query));

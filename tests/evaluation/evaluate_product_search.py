@@ -6,7 +6,6 @@ Relevant products per query are judged from the product data.
 """
 import json, sys, urllib.parse, urllib.request
 
-sys.path.insert(0, r"C:\repos\FindToolbox\scratch")
 
 # name, category, brand
 P = [
@@ -101,4 +100,4 @@ if __name__ == "__main__":
         for e, label in ENGINES:
             s = summary[e]
             print("  %-13s recall %.0f%%  precision %.0f%%  MRR %.2f  zero-hit queries %d  perfect %d/%d" % (label, s["recall"] * 100, s["precision"] * 100, s["rr"], s["zero"], s["perfect"], len(QUERIES)))
-    json.dump(results, open(r"C:\repos\FindToolbox\scratch\evaluation.json", "w"), indent=1)
+    json.dump(results, open("evaluation.json", "w"), indent=1)

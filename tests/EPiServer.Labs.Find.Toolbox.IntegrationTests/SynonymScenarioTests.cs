@@ -63,6 +63,19 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
             // --- Case insensitive synonyms
             new Scenario("mixed case synonym from the Find UI", "colour palette", "mode=msm&msm=100%", "D10"),
 
+            // --- README default and quoted phrases
+            new Scenario("msm 2<-25% (README default): 4 clauses, one may be missing", "episerver find editing fast", "mode=msm&msm=2<-25%", "D1"),
+            new Scenario("msm 2<-25% (README default): 2 clauses, both required", "episerver find", "mode=msm&msm=2<-25%", "D1", "D2"),
+            new Scenario("quoted phrase gets its synonyms", "\"new york\" pizza", "mode=msm&msm=100%", "D6", "D7"),
+
+            // --- Fuzzy and wildcard on their own must respect MinimumShouldMatch
+            new Scenario("fuzzy: typo in a two word query, 100%", "episervr find", "mode=msm&msm=100%&fuzzy=true", "D1"),
+            new Scenario("wildcard: partial words, 100%", "episerv fin", "mode=msm&msm=100%&wildcard=true", "D1"),
+            new Scenario("wildcard: upper case partial words", "EPISERV FIN", "mode=msm&msm=100%&wildcard=true", "D1"),
+
+            // --- Boolean operators are left to Find, even with every extension on
+            new Scenario("NOT excludes, full chain", "episerver NOT find", "mode=or&relevance=true&fuzzy=true&wildcard=true", "D2", "D4"),
+
             // --- Full README chains must not loosen MinimumShouldMatch
             new Scenario("full chain: relevance + fuzzy + wildcard", "episerver find", "mode=msm&msm=100%&relevance=true&fuzzy=true&wildcard=true", "D1", "D2"),
             new Scenario("InField: Name + SearchText", "episerver find", "mode=msm&msm=100%&inFields=true", "D1", "D2"),

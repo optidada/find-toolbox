@@ -41,6 +41,7 @@ namespace ToolboxTestHarness
             new TestDocument("D8",  "York pizza recipes"),
             new TestDocument("D9",  "New pizza menu"),
             new TestDocument("D10", "Color palette guide"),
+            new TestDocument("D11", "Automobile insurance basics"),
         };
 
         /// <summary>
@@ -69,6 +70,8 @@ namespace ToolboxTestHarness
             new TestSynonym("new york", "nyc", true),
             // mixed case as an editor might type it in the Find UI
             new TestSynonym("Colour", "Color", false),
+            // the simplest case: one word to one word, lower case
+            new TestSynonym("car", "automobile", false),
         };
     }
 
@@ -98,6 +101,9 @@ namespace ToolboxTestHarness
         public double? PrefixBoost { get; set; }
         public double? FuzzyBoost { get; set; }
         public double? WildcardBoost { get; set; }
+
+        /// <summary>Use Find's built-in .UsingSynonyms() instead of .UsingSynonymsImproved() (for comparison).</summary>
+        public bool BuiltinSynonyms { get; set; }
 
         /// <summary>scenarios (D1..D10, default) | relevance (R1..R9)</summary>
         public string Set { get; set; } = "scenarios";

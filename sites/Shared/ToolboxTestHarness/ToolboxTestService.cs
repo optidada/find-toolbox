@@ -375,7 +375,12 @@ namespace ToolboxTestHarness
                 search = search.MinimumShouldMatch(request.Msm);
             }
 
-            if (request.Synonyms)
+            if (request.Synonyms && request.BuiltinSynonyms)
+            {
+                // Find's built-in synonyms, for comparison
+                search = search.UsingSynonyms();
+            }
+            else if (request.Synonyms)
             {
                 // Zero cache duration: always read the synonyms seeded by the test run
                 search = search.UsingSynonymsImproved(TimeSpan.Zero);

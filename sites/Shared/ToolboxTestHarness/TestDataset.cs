@@ -42,6 +42,7 @@ namespace ToolboxTestHarness
             new TestDocument("D9",  "New pizza menu"),
             new TestDocument("D10", "Color palette guide"),
             new TestDocument("D11", "Automobile insurance basics"),
+            new TestDocument("D12", "Vehicle maintenance tips"),
         };
 
         /// <summary>
@@ -72,6 +73,8 @@ namespace ToolboxTestHarness
             new TestSynonym("Colour", "Color", false),
             // the simplest case: one word to one word, lower case
             new TestSynonym("car", "automobile", false),
+            // a second synonym for the same word: car => (car OR automobile OR vehicle)
+            new TestSynonym("car", "vehicle", false),
         };
     }
 

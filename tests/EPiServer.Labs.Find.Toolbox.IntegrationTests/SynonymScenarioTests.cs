@@ -65,10 +65,14 @@ namespace EPiServer.Labs.Find.Toolbox.IntegrationTests
 
             // --- Customer report against the original toolbox: MinimumShouldMatch 2<67%, one way synonym X => Y,
             //     searching for X alone gave 0 hits (X and Y were both required; no document has both)
-            new Scenario("customer report: 2<67%, one word with a one way synonym", "car", "mode=msm&msm=2<67%", "D11"),
+            new Scenario("customer report: 2<67%, one word with one way synonyms", "car", "mode=msm&msm=2<67%", "D11", "D12"),
             new Scenario("customer report: 2<67%, the synonym word itself", "automobile", "mode=msm&msm=2<67%", "D11"),
             new Scenario("customer report: 2<67%, one word with a multi word synonym", "find", "mode=msm&msm=2<67%", "D1", "D2", "D3"),
             new Scenario("customer report: 2<67%, synonym word + other word", "car insurance", "mode=msm&msm=2<67%", "D11"),
+            new Scenario("one word with several synonyms, 2<67%: any of them", "car", "mode=msm&msm=2<67%", "D11", "D12"),
+            new Scenario("one word with several synonyms, 100%: any of them", "car", "mode=msm&msm=100%", "D11", "D12"),
+            new Scenario("one word with several synonyms + other word, 2<67%", "car maintenance", "mode=msm&msm=2<67%", "D12"),
+            new Scenario("one word with several synonyms, AND", "car", "mode=and", "D11", "D12"),
             new Scenario("single word whose stem differs from the word, msm 100%", "insurance", "mode=msm&msm=100%", "D11"),
             new Scenario("single word whose stem differs, msm 100%, no synonyms", "automobile", "mode=msm&msm=100%&synonyms=false", "D11"),
 

@@ -152,6 +152,25 @@
                     <a class="@(Model.Request.Msm == "100%" ? "on" : "")" href="@Link(setting: "msm", settingValue: "100%")">100%</a>
                     <a class="@(string.IsNullOrEmpty(Model.Request.Msm) ? "on" : "")" href="@Link(setting: "msm", settingValue: "")">off (OR)</a>
                 }
+                @if (!string.IsNullOrEmpty(Model.MainQuery))
+                {
+                    <p>
+                        <strong>Sent to Find:</strong> <code>@Model.MainQuery</code><br />
+                        <strong>minimum_should_match:</strong>
+                        @if (!string.IsNullOrEmpty(Model.MinimumShouldMatchSent))
+                        {
+                            <code>@Model.MinimumShouldMatchSent</code> <span>- counted over the top level clauses; a synonym group in parentheses counts as one</span>
+                        }
+                        else if (Model.Request.Engine == "toolbox" && !string.IsNullOrEmpty(Model.Request.Msm))
+                        {
+                            <span>not sent - the query is one clause (one word or one synonym group), nothing to count</span>
+                        }
+                        else
+                        {
+                            <span>not used</span>
+                        }
+                    </p>
+                }
                 <pre>@Model.ToolboxChain</pre>
                 <details><summary>Query sent to Find</summary><pre>@Model.QueryJson</pre></details>
                 <p>Facet counts: each facet is counted with the filters of the other facets applied, so you can select several values in one facet. "1 of 3" = 1 with the current selections, 3 for the search without facet selections.</p>

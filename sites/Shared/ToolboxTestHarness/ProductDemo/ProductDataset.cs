@@ -178,6 +178,10 @@ namespace ToolboxTestHarness.ProductDemo
         /// <summary>The counts for the query without any facet selections ("of N" in the UI).</summary>
         public Dictionary<string, Dictionary<string, int>> FacetTotals { get; set; } = new Dictionary<string, Dictionary<string, int>>();
         public string ToolboxChain { get; set; }
+        /// <summary>The main query_string sent to Find (after synonym expansion).</summary>
+        public string MainQuery { get; set; }
+        /// <summary>The minimum_should_match sent with it, or null when not sent (one clause).</summary>
+        public string MinimumShouldMatchSent { get; set; }
         public string QueryJson { get; set; }
     }
 }

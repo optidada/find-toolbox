@@ -152,6 +152,11 @@ namespace ToolboxTestHarness.ProductDemo
             }
 
             result.ToolboxChain += Environment.NewLine + "// Find requests for this page: " + requests + (request.NoCache ? "" : " (or fewer: cached)");
+
+            // The main query as sent (first query_string), to show what MinimumShouldMatch counts
+            var main = string.IsNullOrEmpty(result.QueryJson) ? null : JObject.Parse(result.QueryJson).SelectTokens("$..query_string").FirstOrDefault();
+            result.MainQuery = (string)main?["query"];
+            result.MinimumShouldMatchSent = (string)main?["minimum_should_match"];
             return result;
         }
 

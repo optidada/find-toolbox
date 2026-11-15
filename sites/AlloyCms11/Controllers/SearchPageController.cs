@@ -9,7 +9,7 @@ using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Framework;
 using EPiServer.Find.Json;
 using EPiServer.Find.UnifiedSearch;
-using EPiServer.Labs.Find.Toolbox;
+using Optidada.SearchNavigation.Toolbox;
 using Newtonsoft.Json.Linq;
 
 namespace AlloyCms11.Controllers

@@ -1,4 +1,6 @@
-# EPiServer.Labs.Find.Toolbox
+# Optidada.SearchNavigation.Toolbox
+
+[![CI](https://github.com/optidada/find-toolbox/actions/workflows/ci.yml/badge.svg)](https://github.com/optidada/find-toolbox/actions/workflows/ci.yml)
 
 Better search for **Optimizely Search & Navigation (Find)**: synonyms that respect `MinimumShouldMatch` and AND,
 relevance boosting for phrases and title matches, typo and partial-word matching, and improved CMS edit-UI search.
@@ -10,7 +12,7 @@ One package, two builds:
 | `net48` | CMS 11 | 13.6.1 (latest for CMS 11) |
 | `net8.0` | CMS 12 | 17.1 or later |
 
-> Like other EPiServer.Labs projects this is not officially supported by Optimizely.
+> A community project (formerly Optidada.SearchNavigation.Toolbox); not officially supported by Optimizely.
 
 ---
 
@@ -35,12 +37,13 @@ One package, two builds:
 
 ## Quick start
 
-1. Install the NuGet package `EPiServer.Labs.Find.Toolbox` 3.x (one package for both CMS 11 and CMS 12; NuGet picks
+1. Install the NuGet package `Optidada.SearchNavigation.Toolbox` 3.x (one package for both CMS 11 and CMS 12; NuGet picks
    the right build). Packages are attached to the [GitHub releases](https://github.com/optidada/find-toolbox/releases).
 2. Add the namespace:
 
    ```csharp
-   using EPiServer.Labs.Find.Toolbox;
+   using Optidada.SearchNavigation.Toolbox;           // the extensions and ToolboxOptions
+   using Optidada.SearchNavigation.Toolbox.Synonyms;  // only for your own ISynonymProvider / SynonymService
    ```
 
 3. Replace any use of Find's `.UsingSynonyms()` with `.UsingSynonymsImproved()`.
@@ -279,7 +282,7 @@ Find's `.For()` escapes almost all query syntax, so `-`, `+`, `*`, `~`, `:`, par
 (`e-mail`, `c++`, `covid-19` and `cats -dogs` are just words). Real syntax is limited to:
 
 - **Quoted phrases** (`"new york" pizza`): kept, and phrases can have synonyms too.
-- **Upper case `AND`, `OR`, `NOT`** (outside quotes): `FindToolboxOptions.BooleanOperators`
+- **Upper case `AND`, `OR`, `NOT`** (outside quotes): `ToolboxOptions.BooleanOperators`
   - `Ignore` (default, also in the CMS UI search providers): removed, so the query is searched as words with all
     toolbox features. Typically pasted upper case text: `TERMS AND CONDITIONS` is searched as `terms conditions`.
     (`RawQuery`, what statistics record, keeps the user's text.)
@@ -384,20 +387,20 @@ var result = _client.Search<ArticlePage>()
 
 ## Configuration (limits and boosts)
 
-Everything is configurable through `FindToolboxOptions`. Defaults are safe for most sites.
+Everything is configurable through `ToolboxOptions`. Defaults are safe for most sites.
 
 **CMS 12** (`Startup.ConfigureServices`):
 
 ```csharp
-services.AddFindToolbox(options =>
+services.AddSearchNavigationToolbox(options =>
 {
     options.MaxSynonymsPerPhrase = 5;
     options.SynonymCacheDuration = TimeSpan.FromMinutes(30);
 });
 ```
 
-(`AddFindToolbox()` is optional - the services register themselves - and equal to
-`services.Configure<FindToolboxOptions>(...)`.)
+(`AddSearchNavigationToolbox()` is optional - the services register themselves - and equal to
+`services.Configure<ToolboxOptions>(...)`.)
 
 **CMS 11** (an `IConfigurableModule`):
 
@@ -408,7 +411,7 @@ public class FindToolboxConfiguration : IConfigurableModule
 {
     public void ConfigureContainer(ServiceConfigurationContext context)
     {
-        context.Services.Configure<FindToolboxOptions>(options => options.MaxSynonymsPerPhrase = 5);
+        context.Services.Configure<ToolboxOptions>(options => options.MaxSynonymsPerPhrase = 5);
     }
 
     public void Initialize(InitializationEngine context) { }
@@ -450,14 +453,14 @@ public class FindToolboxConfiguration : IConfigurableModule
 | `SearchProviderMaxResults` | 20 | |
 | `SearchProviderCacheDuration` | off | Results cache; off so editors find new content immediately |
 
-Use your own synonym source by registering an `ISynonymProvider` (the default is `SynonymLoader`, which reads the
+Use your own synonym source by registering an `ISynonymProvider` (the default is `FindSynonymProvider`, which reads the
 synonyms from Find).
 
 ---
 
 ## Performance
 
-Measured with `tests/EPiServer.Labs.Find.Toolbox.Benchmark` against a Find test index with 5 000 documents
+Measured with `tests/Optidada.SearchNavigation.Toolbox.Benchmark` against a Find test index with 5 000 documents
 (~120 000 distinct terms; title + ~150 word body, English language routing). Server time (`took`) in ms,
 median / p95 of 5 runs per query (3-4 queries per column), every request uncached.
 
@@ -484,7 +487,7 @@ median / p95 of 5 runs per query (3-4 queries per column), every request uncache
 - A leading wildcard (`WildcardMatch(boost, doubleSided: true, ...)`) is 15-40x slower: avoid it.
 - The p95 spikes are noise from the shared service; the medians are stable between runs.
 - Terms in the index matter more than documents for fuzzy/wildcard. Re-run the benchmark against an index like
-  yours: `cd tests/EPiServer.Labs.Find.Toolbox.Benchmark`, `dotnet run -- index`, `dotnet run -- bench`,
+  yours: `cd tests/Optidada.SearchNavigation.Toolbox.Benchmark`, `dotnet run -- index`, `dotnet run -- bench`,
   `dotnet run -- delete` (credentials from `FIND_SERVICEURL` / `FIND_DEFAULTINDEX`; use a test index).
 
 **Query length limit.** The Find service rejects a query string query longer than 150 characters when it contains
@@ -509,42 +512,65 @@ content ID, and the page provider matches absolute URLs and publish dates.
 
 ## Upgrading from 1.x / 2.x
 
-- **Namespace:** everything is in `EPiServer.Labs.Find.Toolbox` (1.x for CMS 11 used `EPiServer.Find.Cms`).
+3.0 is a new package: **`Optidada.SearchNavigation.Toolbox`** replaces `EPiServer.Labs.Find.Toolbox` (the
+`EPiServer.*` prefix is reserved for Optimizely on nuget.org). Remove the old package, add the new one and rename:
+
+| 2.x | 3.0 |
+|---|---|
+| package / namespace `EPiServer.Labs.Find.Toolbox` (1.x on CMS 11: `EPiServer.Find.Cms`) | `Optidada.SearchNavigation.Toolbox` |
+| `FindToolboxOptions` | `ToolboxOptions` |
+| `SynonymLoader` | `Synonyms.FindSynonymProvider` |
+| `UsingSynonymService` | `Synonyms.SynonymService` |
+| `ISynonymProvider` | `Synonyms.ISynonymProvider` |
+| `MinShouldMatchQueryStringQuery` | `Queries.ToolboxQueryStringQuery` |
+| `PhraseQuery`, `PhrasePrefixQuery` | `Queries.PhraseQuery`, `Queries.PhrasePrefixQuery` |
+| `QueryHelpers`, `SynonymExpander`, `SynonymStemming` | internal (the extensions do this for you) |
+| `MinShouldMatchBoolQuery` | removed (unused) |
+| search providers `EPiServer.Labs.Find.Toolbox.SearchProviders.*` | `Optidada.SearchNavigation.Toolbox.SearchProviders.*` (same class names) |
+
+The extension methods keep their names (`UsingSynonymsImproved()`, `MinimumShouldMatch()`, ...): with the new
+`using` most code compiles unchanged.
+
+Behaviour:
+
 - **Find versions:** CMS 12 requires Find 17.1+; CMS 11 is built against Find 13.6.1.
 - **Ranking changes:** synonyms now rank below the user's own words, single word queries get a title boost, and
   `MinimumShouldMatch` is respected with synonyms. Set `SynonymBoost = 1` and `SynonymVariationBoostFactor = 1`
   to weigh synonyms like 2.x did.
-- `MinimumShouldMatch()` returns `IQueriedSearch<T, QueryStringQuery>` (was `...MinShouldMatchQueryStringQuery`).
-- `SetTimeout(int milliseconds)`: only the parameter name changed (it was called `durationInSeconds` but always was
-  milliseconds).
 - Replace Find's `.UsingSynonyms()` with `.UsingSynonymsImproved()` (see [the comparison](#why-usingsynonymsimproved-instead-of-finds-usingsynonyms)).
-- `UsingSynonymService` and `SynonymLoader` take `FindToolboxOptions` (and `UsingSynonymService` an
-  `ISynonymProvider`) in their constructors; only relevant if you construct them yourself.
+- `MinimumShouldMatch()` returns `IQueriedSearch<T, QueryStringQuery>`.
+- `SetTimeout(int milliseconds)` (CMS 11): only the parameter name changed (it was called `durationInSeconds` but
+  always was milliseconds). On CMS 12 use Find's own `SetTimeout`.
 - Prefix boosting now starts at 3 characters (2.x: 2) and relevance phrases use at most 10 words.
-- `MinShouldMatchQueryStringQuery.QueriesForMatch` / `IsSingleClause` moved to its `Toolbox` property
-  (`ToolboxQueryState`); only relevant if you read them in your own code.
-- `QueryHelpers.GetFirstQueryStringQuery()` / `TryGetBoolQuery()` are obsolete (the extensions find the main query
-  internally) and `QueryHelpers.RemoveBooleanOperators()` was removed.
+- `QueriesForMatch` / `IsSingleClause` moved to `ToolboxQueryStringQuery.Toolbox` (`ToolboxQueryState`).
 - `InFieldImproved()` writes boosts with invariant culture (`^0.5`, not `^0,5` on e.g. a Swedish server) and works
   after the other extensions.
+- Synonym expansions with boosts are kept within 150 characters (`MaxBoostedQueryLength`): the Find service rejects
+  longer ones.
 
 ---
 
 ## Repository layout and tests
 
 ```
-src/EPiServer.Labs.Find.Toolbox/                   the library (net48 + net8.0)
-tests/EPiServer.Labs.Find.Toolbox.UnitTests/       generated query JSON, limits, boosts; no Find index needed
-tests/EPiServer.Labs.Find.Toolbox.IntegrationTests/ real searches against the Alloy test sites
-sites/AlloyCms11/                                  Alloy MVC, CMS 11, Find 13.6.1 (net48, IIS Express)
-sites/AlloyCms12/                                  Alloy MVC, CMS 12, Find 17.1 (net8.0)
-sites/Shared/ToolboxTestHarness/                   test data set and /toolbox-test endpoints (shared by the sites)
+src/Optidada.SearchNavigation.Toolbox/              the library (net48 + net8.0)
+  *SearchExtensions.cs, ToolboxOptions.cs            public API: one file per extension, options
+  Queries/                                           the main query, query types, query text parsing
+  Synonyms/                                          synonym source, expansion, stemming
+  SearchProviders/Cms11, Cms12                       CMS edit UI search providers (one set per CMS version)
+tests/Optidada.SearchNavigation.Toolbox.UnitTests/   generated query JSON, limits, boosts; no Find index needed
+tests/Optidada.SearchNavigation.Toolbox.IntegrationTests/  real searches against the Alloy test sites
+tests/Optidada.SearchNavigation.Toolbox.Benchmark/   performance benchmark (test index)
+tests/evaluation/                                    search quality evaluation (precision/recall)
+sites/AlloyCms11/                                    Alloy MVC, CMS 11, Find 13.6.1 (net48, IIS Express)
+sites/AlloyCms12/                                    Alloy MVC, CMS 12, Find 17.1 (net8.0)
+sites/Shared/ToolboxTestHarness/                     test data set and /toolbox-test endpoints (shared by the sites)
 ```
 
 **Unit tests** (run on both frameworks):
 
 ```
-dotnet test tests/EPiServer.Labs.Find.Toolbox.UnitTests
+dotnet test tests/Optidada.SearchNavigation.Toolbox.UnitTests
 ```
 
 **Integration tests** need a Find index (a dedicated test index: the tests write pages and synonyms to it).
@@ -559,10 +585,10 @@ dotnet user-secrets set "EPiServer:Find:DefaultIndex" "my_test_index"
 ASPNETCORE_ENVIRONMENT=Development dotnet run --urls http://localhost:5112
 
 # 3. Run the tests (they seed the test pages and synonyms first)
-TOOLBOX_CMS12_URL=http://localhost:5112 dotnet test tests/EPiServer.Labs.Find.Toolbox.IntegrationTests
+TOOLBOX_CMS12_URL=http://localhost:5112 dotnet test tests/Optidada.SearchNavigation.Toolbox.IntegrationTests
 
 # Optional: wipe ALL documents and synonyms in the index before seeding
-TOOLBOX_RESET_INDEX=true TOOLBOX_CMS12_URL=http://localhost:5112 dotnet test tests/EPiServer.Labs.Find.Toolbox.IntegrationTests
+TOOLBOX_RESET_INDEX=true TOOLBOX_CMS12_URL=http://localhost:5112 dotnet test tests/Optidada.SearchNavigation.Toolbox.IntegrationTests
 ```
 
 Tests for a site whose `TOOLBOX_<SITE>_URL` is not set are skipped. Both sites can share one test index.
@@ -574,7 +600,7 @@ cd sites/AlloyCms11
 # Index settings: copy episerver.find.config.template to episerver.find.config (git-ignored) and fill it in
 "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" AlloyCms11.csproj -restore
 "C:/Program Files/IIS Express/iisexpress.exe" /path:%CD% /port:5111
-TOOLBOX_CMS11_URL=http://localhost:5111 dotnet test ../../tests/EPiServer.Labs.Find.Toolbox.IntegrationTests
+TOOLBOX_CMS11_URL=http://localhost:5111 dotnet test ../../tests/Optidada.SearchNavigation.Toolbox.IntegrationTests
 ```
 
 The build copies the CMS UI modules from the packages and seeds `App_Data/AlloyCms11.mdf` from the empty CMS

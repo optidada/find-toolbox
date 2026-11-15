@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\EPiServer.Labs.Find.Toolbox\EPiServer.Labs.Find.Toolbox.csproj" />
+    <ProjectReference Include="..\..\src\Optidada.SearchNavigation.Toolbox\Optidada.SearchNavigation.Toolbox.csproj" />
   </ItemGroup>
 
   <ItemGroup>

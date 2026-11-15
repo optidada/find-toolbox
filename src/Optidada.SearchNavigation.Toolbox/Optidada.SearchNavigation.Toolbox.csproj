@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      One code base, two builds:
+        net48  -> Optimizely CMS 11 / Search & Navigation (Find) 13
+        net8.0 -> Optimizely CMS 12 / Search & Navigation (Find) 17.1+
+    -->
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Optidada.SearchNavigation.Toolbox</RootNamespace>
+    <AssemblyName>Optidada.SearchNavigation.Toolbox</AssemblyName>
+    <Version>3.0.0-beta.3</Version>
+
+    <PackageId>Optidada.SearchNavigation.Toolbox</PackageId>
+    <Authors>Daniel Dahlin</Authors>
+    <Description>Improved synonyms, MinimumShouldMatch, relevance, fuzzy and wildcard matching for Optimizely Search &amp; Navigation (Find).</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageTags>Optimizely;Episerver;Find;SearchNavigation;Search;Synonyms;MinimumShouldMatch</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageProjectUrl>https://github.com/optidada/find-toolbox</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/optidada/find-toolbox.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageReleaseNotes>3.0 (formerly EPiServer.Labs.Find.Toolbox): one package for CMS 11 (Find 13.6.1) and CMS 12 (Find 17.1+). MinimumShouldMatch and AND work with synonyms, synonyms rank below the user's words, stemmed synonym lookup, configurable limits and boosts (ToolboxOptions), queries kept within the Find service's 150 character limit, improved CMS edit UI search providers. See CHANGELOG.md and the README upgrade guide.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Content files that EPiServer.Find.Cms drops into the project -->
+    <Compile Remove="modules\**" />
+    <None Remove="modules\**" />
+    <Content Remove="modules\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Snowball stemmers (MIT, netstandard2.0, no dependencies): stemmed synonym lookups -->
+    <PackageReference Include="libstemmer.net" Version="2.2.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Optidada.SearchNavigation.Toolbox.UnitTests" />
+  </ItemGroup>
+
+  <!-- SearchProviders/Cms11 and Cms12 hold the same provider types (same namespace): one set is compiled per target -->
+  <!-- .NET Framework / CMS 11 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="EPiServer.Find.Cms" Version="13.6.1" />
+    <PackageReference Include="EPiServer.CMS.UI.Core" Version="11.37.5" />
+    <PackageReference Include="EPiServer.CMS.Core" Version="11.21.4" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Reference Include="System.Web" />
+    <Compile Remove="SearchProviders\Cms12\**" />
+  </ItemGroup>
+
+  <!-- .NET 8 / CMS 12 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="EPiServer.Find.Cms" Version="17.1.0" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Remove="SearchProviders\Cms11\**" />
+  </ItemGroup>
+
+</Project>

@@ -9,7 +9,7 @@ using EPiServer.Find.Framework.Statistics;
 using EPiServer.Find.Json;
 using EPiServer.Find.Optimizations;
 using EPiServer.Find.Optimizations.Synonyms.Api;
-using EPiServer.Labs.Find.Toolbox;
+using Optidada.SearchNavigation.Toolbox;
 using EPiServer.Security;
 using EPiServer.Web;
 using Newtonsoft.Json.Linq;
@@ -39,10 +39,10 @@ namespace ToolboxTestHarness
     {
         private readonly IContentRepository _contentRepository;
         private readonly IClient _client;
-        private readonly FindToolboxOptions _options;
+        private readonly ToolboxOptions _options;
         private static readonly System.Threading.SemaphoreSlim OptionsLock = new System.Threading.SemaphoreSlim(1, 1);
 
-        public ToolboxTestService(IContentRepository contentRepository, IClient client, FindToolboxOptions options)
+        public ToolboxTestService(IContentRepository contentRepository, IClient client, ToolboxOptions options)
         {
             _contentRepository = contentRepository;
             _client = client;

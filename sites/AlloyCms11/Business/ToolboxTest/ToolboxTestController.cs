@@ -3,8 +3,8 @@ using EPiServer.Find;
 using EPiServer.Find.Framework;
 using EPiServer.Framework;
 using EPiServer.Framework.Initialization;
-using EPiServer.Labs.Find.Toolbox;
-using EPiServer.Labs.Find.Toolbox.SearchProviders;
+using Optidada.SearchNavigation.Toolbox;
+using Optidada.SearchNavigation.Toolbox.SearchProviders;
 using EPiServer.ServiceLocation;
 using EPiServer.Shell.Search;
 using Newtonsoft.Json;
@@ -16,7 +16,7 @@ using ToolboxTestHarness;
 namespace AlloyCms11.Business.ToolboxTest
 {
     /// <summary>
-    /// Test-only endpoints used by tests/EPiServer.Labs.Find.Toolbox.IntegrationTests (same API as the CMS 12 site).
+    /// Test-only endpoints used by tests/Optidada.SearchNavigation.Toolbox.IntegrationTests (same API as the CMS 12 site).
     /// Only answers local requests.
     /// </summary>
     public class ToolboxTestController : Controller
@@ -24,7 +24,7 @@ namespace AlloyCms11.Business.ToolboxTest
         private static ToolboxTestService Service => new ToolboxTestService(
             ServiceLocator.Current.GetInstance<IContentRepository>(),
             SearchClient.Instance,
-            ServiceLocator.Current.GetInstance<FindToolboxOptions>());
+            ServiceLocator.Current.GetInstance<ToolboxOptions>());
 
         [HttpPost]
         public async Task<ActionResult> Seed(bool resetIndex = false)
@@ -85,7 +85,7 @@ namespace AlloyCms11.Business.ToolboxTest
             var service = new ToolboxTestService(
                 ServiceLocator.Current.GetInstance<IContentRepository>(),
                 SearchClient.Instance,
-                ServiceLocator.Current.GetInstance<FindToolboxOptions>());
+                ServiceLocator.Current.GetInstance<ToolboxOptions>());
             return View("~/Views/ProductDemo/Index.cshtml", await service.ProductSearchAsync(request ?? new ToolboxTestHarness.ProductDemo.ProductSearchRequest()));
         }
     }

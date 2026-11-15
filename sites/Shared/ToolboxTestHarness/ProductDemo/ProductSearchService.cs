@@ -8,7 +8,7 @@ using EPiServer.Find.Api.Querying.Filters;
 using EPiServer.Find.Api.Querying.Queries;
 using EPiServer.Find.Cms;
 using EPiServer.Find.Json;
-using EPiServer.Labs.Find.Toolbox;
+using Optidada.SearchNavigation.Toolbox;
 using EPiServer.Security;
 using Newtonsoft.Json.Linq;
 using System;

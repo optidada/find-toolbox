@@ -23,11 +23,11 @@ jobs:
             10.0.x
 
       - name: Build library
-        run: dotnet build src/EPiServer.Labs.Find.Toolbox -c Release
+        run: dotnet build src/Optidada.SearchNavigation.Toolbox -c Release
 
       # Unit tests only: the integration tests need the Alloy sites and a Find index (they skip without them)
       - name: Unit tests
-        run: dotnet test tests/EPiServer.Labs.Find.Toolbox.UnitTests -c Release --logger "trx" --results-directory TestResults
+        run: dotnet test tests/Optidada.SearchNavigation.Toolbox.UnitTests -c Release --logger "trx" --results-directory TestResults
 
       - name: Test results
         if: always()
@@ -37,7 +37,7 @@ jobs:
           path: TestResults
 
       - name: Pack
-        run: dotnet pack src/EPiServer.Labs.Find.Toolbox -c Release --no-build -o artifacts
+        run: dotnet pack src/Optidada.SearchNavigation.Toolbox -c Release --no-build -o artifacts
 
       - uses: actions/upload-artifact@v4
         with:

@@ -150,7 +150,7 @@ namespace ToolboxTestHarness.ProductDemo
         public bool Relevance { get; set; } = true;
         public bool Fuzzy { get; set; } = true;
         public bool Wildcard { get; set; } = true;
-        /// <summary>Override FindToolboxOptions.FuzzyUseLanguageField / WildcardUseLanguageField (tuning; test sites only).</summary>
+        /// <summary>Override ToolboxOptions.FuzzyUseLanguageField / WildcardUseLanguageField (tuning; test sites only).</summary>
         public bool? FuzzyLanguageField { get; set; }
         public bool? WildcardLanguageField { get; set; }
 

@@ -12,6 +12,11 @@ indent_size = 4
 [*.{csproj,props,targets,config,xml,json,yml,yaml}]
 indent_size = 2
 
+# Folders are namespaces, except: the CMS 11 / CMS 12 search provider folders (same types, one set per target),
+# Microsoft.Extensions.DependencyInjection extensions and polyfills
+[src/Optidada.SearchNavigation.Toolbox/{SearchProviders/Cms11/*.cs,SearchProviders/Cms12/*.cs,Polyfills/*.cs,ToolboxServiceCollectionExtensions.cs}]
+dotnet_diagnostic.IDE0130.severity = none
+
 [*.md]
 trim_trailing_whitespace = false
 
@@ -20,10 +25,23 @@ csharp_new_line_before_open_brace = all
 csharp_prefer_braces = true:suggestion
 csharp_style_var_for_built_in_types = true:suggestion
 csharp_style_var_when_type_is_apparent = true:suggestion
-dotnet_sort_system_directives_first = false
+dotnet_sort_system_directives_first = true
 dotnet_style_qualification_for_field = false:suggestion
 dotnet_style_readonly_field = true:suggestion
-# Private fields: _camelCase
+# Private static readonly fields and constants: PascalCase
+dotnet_naming_rule.static_readonly_fields.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_fields.style = pascal
+dotnet_naming_rule.static_readonly_fields.severity = suggestion
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.applicable_accessibilities = private
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
+dotnet_naming_style.pascal.capitalization = pascal_case
+dotnet_naming_rule.constants.symbols = constants
+dotnet_naming_rule.constants.style = pascal
+dotnet_naming_rule.constants.severity = suggestion
+dotnet_naming_symbols.constants.applicable_kinds = field
+dotnet_naming_symbols.constants.required_modifiers = const
+# Other private fields: _camelCase
 dotnet_naming_rule.private_fields.symbols = private_fields
 dotnet_naming_rule.private_fields.style = underscore_camel
 dotnet_naming_rule.private_fields.severity = suggestion

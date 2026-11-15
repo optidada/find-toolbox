@@ -4,7 +4,7 @@ using ToolboxTestHarness;
 namespace AlloyCms12.Business.ToolboxTest;
 
 /// <summary>
-/// Test-only endpoints used by tests/EPiServer.Labs.Find.Toolbox.IntegrationTests.
+/// Test-only endpoints used by tests/Optidada.SearchNavigation.Toolbox.IntegrationTests.
 /// Only mapped when the site runs in the Development environment.
 /// </summary>
 [ApiController]
@@ -35,9 +35,9 @@ public class ToolboxTestController : ControllerBase
 
         EPiServer.Shell.Search.ISearchProvider provider = area switch
         {
-            "media" => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxMediaSearchProvider>(services),
-            "blocks" => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxBlockSearchProvider>(services),
-            _ => ActivatorUtilities.CreateInstance<EPiServer.Labs.Find.Toolbox.SearchProviders.ToolboxPageSearchProvider>(services),
+            "media" => ActivatorUtilities.CreateInstance<Optidada.SearchNavigation.Toolbox.SearchProviders.ToolboxMediaSearchProvider>(services),
+            "blocks" => ActivatorUtilities.CreateInstance<Optidada.SearchNavigation.Toolbox.SearchProviders.ToolboxBlockSearchProvider>(services),
+            _ => ActivatorUtilities.CreateInstance<Optidada.SearchNavigation.Toolbox.SearchProviders.ToolboxPageSearchProvider>(services),
         };
 
         return Ok(_service.SearchWithProvider(provider, q));

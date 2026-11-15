@@ -96,7 +96,7 @@ namespace ToolboxTestHarness
         public bool InFields { get; set; }
         /// <summary>Use UnifiedSearch + SearchTitle (as in the README) instead of a typed Search&lt;ArticlePage&gt;.</summary>
         public bool Unified { get; set; }
-        // Optional per-request FindToolboxOptions boost overrides (for tuning; test sites only)
+        // Optional per-request ToolboxOptions boost overrides (for tuning; test sites only)
         public double? SynonymBoost { get; set; }
         public double? SynonymVariationBoostFactor { get; set; }
         public double? PhraseBoost { get; set; }
@@ -104,7 +104,7 @@ namespace ToolboxTestHarness
         public double? PrefixBoost { get; set; }
         public double? FuzzyBoost { get; set; }
         public double? WildcardBoost { get; set; }
-        /// <summary>ignore | respect (FindToolboxOptions.BooleanOperators)</summary>
+        /// <summary>ignore | respect (ToolboxOptions.BooleanOperators)</summary>
         public string BooleanOperators { get; set; }
 
         /// <summary>Call Find's .Track() (statistics; also sends the language/site tags with the request).</summary>

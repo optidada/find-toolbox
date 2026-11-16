@@ -9,10 +9,10 @@ One package, two builds:
 
 | Target | CMS | Search & Navigation (Find) |
 |---|---|---|
-| `net48` | CMS 11 | 13.6.1 (latest for CMS 11) |
+| `net472` | CMS 11 (sites on .NET Framework 4.7.2, 4.8 or 4.8.1) | 13.6.1 (latest for CMS 11) |
 | `net8.0` | CMS 12 | 17.1 or later |
 
-> A community project (formerly Optidada.SearchNavigation.Toolbox); not officially supported by Optimizely.
+> A community project (formerly EPiServer.Labs.Find.Toolbox); not officially supported by Optimizely.
 
 ---
 
@@ -553,7 +553,7 @@ Behaviour:
 ## Repository layout and tests
 
 ```
-src/Optidada.SearchNavigation.Toolbox/              the library (net48 + net8.0)
+src/Optidada.SearchNavigation.Toolbox/              the library (net472 + net8.0)
   *SearchExtensions.cs, ToolboxOptions.cs            public API: one file per extension, options
   Queries/                                           the main query, query types, query text parsing
   Synonyms/                                          synonym source, expansion, stemming

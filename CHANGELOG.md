@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.0-beta.4
+
+- The CMS 11 build targets `net472` instead of `net48`: CMS 11 sites on .NET Framework 4.7.2 can now install the
+  package (4.8 and 4.8.1 still work). CMS 12 (`net8.0`) is unchanged.
+
 ## 3.0.0-beta.3
 
 **New package name: `Optidada.SearchNavigation.Toolbox`** (formerly `EPiServer.Labs.Find.Toolbox`). See the

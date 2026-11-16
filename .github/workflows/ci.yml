@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    # net48 (CMS 11) needs the .NET Framework reference assemblies: Windows
+    # net472 (CMS 11) needs the .NET Framework reference assemblies: Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

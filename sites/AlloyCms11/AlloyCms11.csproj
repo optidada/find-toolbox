@@ -67,7 +67,7 @@
     <ProjectReference Include="..\..\src\Optidada.SearchNavigation.Toolbox\Optidada.SearchNavigation.Toolbox.csproj">
       <Project>{00000000-0000-0000-0000-000000000000}</Project>
       <Name>Optidada.SearchNavigation.Toolbox</Name>
-      <SetTargetFramework>TargetFramework=net48</SetTargetFramework>
+      <SetTargetFramework>TargetFramework=net472</SetTargetFramework>
     </ProjectReference>
   </ItemGroup>
 
